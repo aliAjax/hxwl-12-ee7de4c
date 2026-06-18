@@ -260,6 +260,183 @@ input {
   line-height: 1.6;
 }
 
+.tl-client-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.tl-tab {
+  min-height: 34px;
+  border-radius: 999px;
+  padding: 7px 16px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tl-tab.active {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+}
+
+.tl-form-panel {
+  background: #fbfdff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 18px;
+}
+
+.tl-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.tl-form-full {
+  grid-column: 1 / -1;
+}
+
+.tl-form-grid select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0 12px;
+  color: #172033;
+  background: #ffffff;
+  font: inherit;
+}
+
+.tl-form-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.tl-timeline {
+  display: grid;
+  gap: 0;
+  position: relative;
+  padding-left: 20px;
+}
+
+.tl-timeline::before {
+  content: "";
+  position: absolute;
+  left: 10px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+}
+
+.tl-empty {
+  color: #64748b;
+  text-align: center;
+  padding: 32px 0;
+  margin: 0;
+}
+
+.tl-card {
+  display: grid;
+  grid-template-columns: 0 1fr;
+  gap: 16px;
+  position: relative;
+  padding: 16px 0;
+}
+
+.tl-card-dot {
+  position: absolute;
+  left: -16px;
+  top: 24px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.tl-card-body {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  background: #fbfdff;
+}
+
+.tl-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tl-card-date {
+  font-weight: 700;
+  color: var(--primary);
+  font-size: 14px;
+}
+
+.tl-card-topic {
+  background: color-mix(in srgb, var(--primary) 10%, #ffffff);
+  color: var(--primary);
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tl-card-fields {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.tl-field {
+  display: grid;
+  gap: 4px;
+}
+
+.tl-field-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.tl-field-value {
+  font-size: 14px;
+  color: #172033;
+  line-height: 1.5;
+}
+
+.tl-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tl-card-actions button {
+  font-size: 13px;
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.tl-btn-danger {
+  color: #e11d48;
+  border-color: #fecdd3;
+  background: #fff1f2;
+}
+
+.tl-btn-danger:hover {
+  background: #ffe4e6;
+}
+
 @media (max-width: 860px) {
   .hero,
   .workspace,
@@ -268,6 +445,14 @@ input {
   }
 
   .field-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tl-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tl-card-fields {
     grid-template-columns: 1fr;
   }
 }
