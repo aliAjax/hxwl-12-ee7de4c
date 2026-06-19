@@ -1,5 +1,24 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import "./styles.css";
+import {
+  loadAllData,
+  saveTimelineRecord,
+  deleteTimelineRecord as dbDeleteTimeline,
+  saveRiskAssessment,
+  deleteRiskAssessment as dbDeleteRisk,
+  saveGoal,
+  deleteGoal as dbDeleteGoal,
+  saveCounters,
+  saveCaseRecord,
+  deleteCaseRecord as dbDeleteCaseRecord,
+  getDBStatus,
+  addDBListener,
+  resetToSampleData,
+  checkDBSupport,
+  type AppData,
+  type DBStatus,
+  type DBEventType,
+} from "./db";
 
 const project = {
   "id": "hxwl-12",
@@ -63,7 +82,7 @@ const project = {
 
 const statusColors = ["status-ok", "status-watch", "status-danger"];
 
-interface TimelineRecord {
+export interface TimelineRecord {
   id: string;
   clientCode: string;
   sessionDate: string;
@@ -73,11 +92,11 @@ interface TimelineRecord {
   nextGoal: string;
 }
 
-type RiskLevel = "stable" | "watch" | "medium" | "high";
+export type RiskLevel = "stable" | "watch" | "medium" | "high";
 
-type GoalStatus = "active" | "paused" | "completed";
+export type GoalStatus = "active" | "paused" | "completed";
 
-interface InterventionGoal {
+export interface InterventionGoal {
   id: string;
   clientCode: string;
   goalTitle: string;
@@ -92,7 +111,7 @@ interface InterventionGoal {
   createdAt: string;
 }
 
-interface RiskDimensions {
+export interface RiskDimensions {
   sleep: number;
   emotion: number;
   selfHarm: number;
@@ -100,7 +119,7 @@ interface RiskDimensions {
   stress: number;
 }
 
-interface RiskAssessment {
+export interface RiskAssessment {
   id: string;
   clientCode: string;
   assessDate: string;
@@ -109,6 +128,58 @@ interface RiskAssessment {
   level: RiskLevel;
   summary: string;
 }
+
+export interface CaseRecord {
+  id: string;
+  clientCode: string;
+  consultationTopic: string;
+  sessionDate: string;
+  mainConcern: string;
+  emotionalState: string;
+  intervention: string;
+  nextGoal: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const initialCaseRecords: CaseRecord[] = [
+  {
+    id: "cr1",
+    clientCode: "C-042",
+    consultationTopic: "焦虑障碍",
+    sessionDate: "2026-06-10",
+    mainConcern: "工作压力导致持续性焦虑，伴随失眠症状",
+    emotionalState: "紧张不安",
+    intervention: "呼吸放松训练 + 认知重构技术",
+    nextGoal: "记录焦虑触发场景，每日练习深呼吸",
+    createdAt: "2026-06-10T10:00:00Z",
+    updatedAt: "2026-06-10T10:00:00Z"
+  },
+  {
+    id: "cr2",
+    clientCode: "C-119",
+    consultationTopic: "亲密关系",
+    sessionDate: "2026-06-09",
+    mainConcern: "与伴侣沟通困难，经常陷入冷战",
+    emotionalState: "低落委屈",
+    intervention: "非暴力沟通训练 + 依恋模式探索",
+    nextGoal: "尝试用观察-感受-需要-请求框架表达",
+    createdAt: "2026-06-09T14:30:00Z",
+    updatedAt: "2026-06-09T14:30:00Z"
+  },
+  {
+    id: "cr3",
+    clientCode: "C-203",
+    consultationTopic: "职业压力",
+    sessionDate: "2026-06-11",
+    mainConcern: "工作负荷过大，职业倦怠感明显",
+    emotionalState: "疲惫烦躁",
+    intervention: "边界设定练习 + 压力管理策略",
+    nextGoal: "制定工作时间边界，试行准时下班",
+    createdAt: "2026-06-11T09:00:00Z",
+    updatedAt: "2026-06-11T09:00:00Z"
+  }
+];
 
 const initialTimelineData: TimelineRecord[] = [
   { id: "1", clientCode: "C-042", sessionDate: "2026-06-10", topic: "焦虑", emotionalState: "紧张不安", intervention: "呼吸放松训练", nextGoal: "觉察焦虑触发场景" },
@@ -249,6 +320,7 @@ const initialGoals: InterventionGoal[] = [
 ];
 
 let nextGoalId = 7;
+let nextCaseRecordId = 4;
 
 const emotionalOptions = ["平静", "低落", "焦虑", "紧张不安", "恐惧加剧", "回避防御", "低落委屈", "疲惫烦躁", "焦虑无助", "愤怒", "麻木"];
 
@@ -377,8 +449,19 @@ function MetricCard({ label, value, index, highlight }: { label: string; value: 
   );
 }
 
-function TimelineSection({ clientCodes }: { clientCodes: string[] }) {
-  const [records, setRecords] = useState<TimelineRecord[]>(initialTimelineData);
+function TimelineSection({
+  clientCodes,
+  records,
+  onAddRecord,
+  onUpdateRecord,
+  onDeleteRecord,
+}: {
+  clientCodes: string[];
+  records: TimelineRecord[];
+  onAddRecord: (r: TimelineRecord) => void;
+  onUpdateRecord: (r: TimelineRecord) => void;
+  onDeleteRecord: (id: string) => void;
+}) {
   const [selectedClient, setSelectedClient] = useState<string>(clientCodes[0] || "C-042");
   const [editingRecord, setEditingRecord] = useState<TimelineRecord | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -410,17 +493,17 @@ function TimelineSection({ clientCodes }: { clientCodes: string[] }) {
     if (!editingRecord) return;
     if (!editingRecord.topic || !editingRecord.intervention || !editingRecord.nextGoal) return;
     if (editingRecord.id) {
-      setRecords(prev => prev.map(r => r.id === editingRecord.id ? editingRecord : r));
+      onUpdateRecord(editingRecord);
     } else {
       const newRecord = { ...editingRecord, id: String(nextTimelineId++) };
-      setRecords(prev => [...prev, newRecord]);
+      onAddRecord(newRecord);
     }
     setIsFormOpen(false);
     setEditingRecord(null);
   };
 
   const handleDelete = (id: string) => {
-    setRecords(prev => prev.filter(r => r.id !== id));
+    onDeleteRecord(id);
   };
 
   const handleCancel = () => {
@@ -1081,9 +1164,353 @@ function GoalTrackingSection({
   );
 }
 
+interface Toast {
+  id: number;
+  message: string;
+  type: "error" | "success" | "info";
+}
+
+function ToastContainer({ toasts }: { toasts: Toast[] }) {
+  if (toasts.length === 0) return null;
+  return (
+    <div className="toast-container">
+      {toasts.map(t => (
+        <div key={t.id} className={`toast toast-${t.type}`}>
+          <span className="toast-icon">{t.type === "error" ? "✕" : t.type === "success" ? "✓" : "ℹ"}</span>
+          <span className="toast-msg">{t.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function App() {
+  const [timeline, setTimeline] = useState<TimelineRecord[]>(initialTimelineData);
   const [assessments, setAssessments] = useState<RiskAssessment[]>(initialRiskAssessments);
   const [goals, setGoals] = useState<InterventionGoal[]>(initialGoals);
+  const [caseRecords, setCaseRecords] = useState<CaseRecord[]>(initialCaseRecords);
+  const [isLoading, setIsLoading] = useState(true);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [dbStatus, setDbStatus] = useState<DBStatus>({ isSupported: true, isConnected: false, version: 0 });
+  const [showDBUpgradeNotice, setShowDBUpgradeNotice] = useState(false);
+  const [caseFormData, setCaseFormData] = useState<Record<string, string>>({});
+  const [editingCaseRecord, setEditingCaseRecord] = useState<CaseRecord | null>(null);
+  const [isCaseFormOpen, setIsCaseFormOpen] = useState(false);
+  const toastIdRef = useRef(0);
+  const isLoadedRef = useRef(false);
+  const isDBSupported = useMemo(() => checkDBSupport(), []);
+
+  const showToast = useCallback((message: string, type: Toast["type"] = "error") => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 3500);
+  }, []);
+
+  const handleDBEvent = useCallback((event: DBEventType, data?: unknown) => {
+    if (event === "upgrade") {
+      const upgradeData = data as { from?: number; to?: number; reason?: string };
+      if (upgradeData.reason === "versionchange") {
+        showToast("数据库版本已更新，请刷新页面以获取最新功能", "info");
+      } else if (upgradeData.from !== undefined && upgradeData.to !== undefined) {
+        setShowDBUpgradeNotice(true);
+        showToast(`数据库已从 v${upgradeData.from} 升级到 v${upgradeData.to}`, "success");
+      }
+    } else if (event === "blocked") {
+      showToast("数据库升级被阻塞，请关闭其他标签页后刷新", "error");
+    } else if (event === "error") {
+      const error = data as Error;
+      console.error("[DB] 数据库错误:", error);
+      showToast(error?.message || "数据库操作出错", "error");
+    } else if (event === "success") {
+      const successData = data as { version?: number };
+      if (successData?.version) {
+        setDbStatus(prev => ({ ...prev, version: successData.version!, isConnected: true }));
+      }
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    const removeListener = addDBListener(handleDBEvent);
+
+    (async () => {
+      const status = await getDBStatus();
+      setDbStatus(status);
+      if (!status.isSupported) {
+        showToast("当前浏览器不支持离线存储功能，请使用现代浏览器", "error");
+      }
+    })();
+
+    return () => { removeListener(); };
+  }, [handleDBEvent, showToast]);
+
+  useEffect(() => {
+    if (isLoadedRef.current) return;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const data = await loadAllData(
+          initialTimelineData,
+          initialRiskAssessments,
+          initialGoals,
+          initialCaseRecords,
+          nextTimelineId,
+          nextRiskId,
+          nextGoalId,
+          nextCaseRecordId
+        );
+        if (cancelled) return;
+        setTimeline(data.timeline);
+        setAssessments(data.riskAssessments);
+        setGoals(data.goals);
+        setCaseRecords(data.caseRecords);
+        nextTimelineId = data.nextTimelineId;
+        nextRiskId = data.nextRiskId;
+        nextGoalId = data.nextGoalId;
+        nextCaseRecordId = data.nextCaseRecordId;
+        isLoadedRef.current = true;
+        setIsLoading(false);
+        showToast("个案档案数据加载完成", "success");
+      } catch (err) {
+        if (cancelled) return;
+        console.error("[DB] 加载数据失败:", err);
+        const errorMsg = err instanceof Error ? err.message : "未知错误";
+        showToast(`数据加载失败：${errorMsg}，已使用本地示例数据`, "error");
+        isLoadedRef.current = true;
+        setIsLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [showToast]);
+
+  const persistTimeline = useCallback(async (records: TimelineRecord[]) => {
+    try {
+      for (const r of records) {
+        await saveTimelineRecord(r);
+      }
+    } catch (err) {
+      console.error("[DB] 保存时间线失败:", err);
+      showToast("时间线数据保存失败，请检查浏览器存储");
+    }
+  }, [showToast]);
+
+  const persistTimelineDelete = useCallback(async (id: string) => {
+    try {
+      await dbDeleteTimeline(id);
+    } catch (err) {
+      console.error("[DB] 删除时间线记录失败:", err);
+      showToast("删除时间线记录失败");
+    }
+  }, [showToast]);
+
+  const persistAssessment = useCallback(async (a: RiskAssessment) => {
+    try {
+      await saveRiskAssessment(a);
+    } catch (err) {
+      console.error("[DB] 保存风险评估失败:", err);
+      showToast("风险评估数据保存失败");
+    }
+  }, [showToast]);
+
+  const persistAssessmentDelete = useCallback(async (id: string) => {
+    try {
+      await dbDeleteRisk(id);
+    } catch (err) {
+      console.error("[DB] 删除风险评估失败:", err);
+      showToast("删除风险评估记录失败");
+    }
+  }, [showToast]);
+
+  const persistGoal = useCallback(async (g: InterventionGoal) => {
+    try {
+      await saveGoal(g);
+    } catch (err) {
+      console.error("[DB] 保存目标失败:", err);
+      showToast("目标数据保存失败");
+    }
+  }, [showToast]);
+
+  const persistGoalDelete = useCallback(async (id: string) => {
+    try {
+      await dbDeleteGoal(id);
+    } catch (err) {
+      console.error("[DB] 删除目标失败:", err);
+      showToast("删除目标记录失败");
+    }
+  }, [showToast]);
+
+  const persistCaseRecord = useCallback(async (record: CaseRecord) => {
+    try {
+      await saveCaseRecord(record);
+    } catch (err) {
+      console.error("[DB] 保存个案记录失败:", err);
+      showToast("个案记录保存失败");
+    }
+  }, [showToast]);
+
+  const persistCaseRecordDelete = useCallback(async (id: string) => {
+    try {
+      await dbDeleteCaseRecord(id);
+    } catch (err) {
+      console.error("[DB] 删除个案记录失败:", err);
+      showToast("删除个案记录失败");
+    }
+  }, [showToast]);
+
+  const persistCounters = useCallback(async () => {
+    try {
+      await saveCounters(nextTimelineId, nextRiskId, nextGoalId, nextCaseRecordId);
+    } catch (err) {
+      console.error("[DB] 保存计数器失败:", err);
+    }
+  }, [showToast]);
+
+  const handleResetToSampleData = useCallback(async () => {
+    if (!confirm("确定要重置所有数据吗？此操作将清空所有修改并恢复为示例数据。")) {
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const data = await resetToSampleData(
+        initialTimelineData,
+        initialRiskAssessments,
+        initialGoals,
+        initialCaseRecords,
+        7,
+        4,
+        7,
+        4
+      );
+      setTimeline(data.timeline);
+      setAssessments(data.riskAssessments);
+      setGoals(data.goals);
+      setCaseRecords(data.caseRecords);
+      nextTimelineId = data.nextTimelineId;
+      nextRiskId = data.nextRiskId;
+      nextGoalId = data.nextGoalId;
+      nextCaseRecordId = data.nextCaseRecordId;
+      showToast("数据已重置为示例数据", "success");
+    } catch (err) {
+      console.error("[DB] 重置数据失败:", err);
+      showToast("重置数据失败");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [showToast]);
+
+  const handleCaseFieldChange = useCallback((field: string, value: string) => {
+    setCaseFormData(prev => ({ ...prev, [field]: value }));
+  }, []);
+
+  const openNewCaseForm = useCallback(() => {
+    setEditingCaseRecord({
+      id: "",
+      clientCode: "",
+      consultationTopic: "",
+      sessionDate: new Date().toISOString().slice(0, 10),
+      mainConcern: "",
+      emotionalState: emotionalOptions[0],
+      intervention: "",
+      nextGoal: "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    setIsCaseFormOpen(true);
+  }, []);
+
+  const openEditCaseForm = useCallback((record: CaseRecord) => {
+    setEditingCaseRecord({ ...record });
+    setIsCaseFormOpen(true);
+  }, []);
+
+  const handleSaveCaseRecord = useCallback(() => {
+    if (!editingCaseRecord) return;
+    if (!editingCaseRecord.clientCode || !editingCaseRecord.consultationTopic
+      || !editingCaseRecord.mainConcern || !editingCaseRecord.intervention) {
+      showToast("请填写必填项（来访者代号、咨询主题、主要困扰、干预方法）");
+      return;
+    }
+    const now = new Date().toISOString();
+    const finalRecord: CaseRecord = {
+      ...editingCaseRecord,
+      updatedAt: now,
+    };
+    if (finalRecord.id) {
+      setCaseRecords(prev => prev.map(r => r.id === finalRecord.id ? finalRecord : r));
+      persistCaseRecord(finalRecord);
+    } else {
+      const newRecord = { ...finalRecord, id: "cr" + nextCaseRecordId++, createdAt: now };
+      setCaseRecords(prev => [...prev, newRecord]);
+      persistCaseRecord(newRecord);
+      persistCounters();
+    }
+    setIsCaseFormOpen(false);
+    setEditingCaseRecord(null);
+    showToast("个案记录已保存", "success");
+  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast]);
+
+  const handleDeleteCaseRecord = useCallback((id: string) => {
+    setCaseRecords(prev => prev.filter(r => r.id !== id));
+    persistCaseRecordDelete(id);
+    showToast("个案记录已删除", "info");
+  }, [persistCaseRecordDelete, showToast]);
+
+  const handleCancelCaseForm = useCallback(() => {
+    setIsCaseFormOpen(false);
+    setEditingCaseRecord(null);
+  }, []);
+
+  const handleAddTimeline = useCallback((record: TimelineRecord) => {
+    setTimeline(prev => {
+      const next = [...prev, record];
+      persistTimeline(next);
+      persistCounters();
+      return next;
+    });
+  }, [persistTimeline, persistCounters]);
+
+  const handleUpdateTimeline = useCallback((record: TimelineRecord) => {
+    setTimeline(prev => {
+      const next = prev.map(r => r.id === record.id ? record : r);
+      persistTimeline(next);
+      return next;
+    });
+  }, [persistTimeline]);
+
+  const handleDeleteTimeline = useCallback((id: string) => {
+    setTimeline(prev => prev.filter(r => r.id !== id));
+    persistTimelineDelete(id);
+  }, [persistTimelineDelete]);
+
+  const handleAddAssessment = useCallback((a: RiskAssessment) => {
+    setAssessments(prev => [...prev, a]);
+    persistAssessment(a);
+    persistCounters();
+  }, [persistAssessment, persistCounters]);
+
+  const handleDeleteAssessment = useCallback((id: string) => {
+    setAssessments(prev => prev.filter(a => a.id !== id));
+    persistAssessmentDelete(id);
+  }, [persistAssessmentDelete]);
+
+  const handleAddGoal = useCallback((g: InterventionGoal) => {
+    setGoals(prev => [...prev, g]);
+    persistGoal(g);
+    persistCounters();
+  }, [persistGoal, persistCounters]);
+
+  const handleUpdateGoal = useCallback((g: InterventionGoal) => {
+    setGoals(prev => prev.map(item => item.id === g.id ? g : item));
+    persistGoal(g);
+  }, [persistGoal]);
+
+  const handleDeleteGoal = useCallback((id: string) => {
+    setGoals(prev => prev.filter(g => g.id !== id));
+    persistGoalDelete(id);
+  }, [persistGoalDelete]);
 
   const { highRiskCount, mediumRiskCount, activeClientCodes } = useMemo(() => {
     const latestByClient = new Map<string, RiskAssessment>();
@@ -1099,36 +1526,22 @@ function App() {
       if (a.level === "high") high++;
       else if (a.level === "medium") medium++;
     }
-    const codesFromTimeline = Array.from(new Set(initialTimelineData.map(r => r.clientCode)));
+    const codesFromTimeline = Array.from(new Set(timeline.map(r => r.clientCode)));
     const codesFromAssess = Array.from(latestByClient.keys());
     const codesFromGoals = Array.from(new Set(goals.map(g => g.clientCode)));
-    const allCodes = Array.from(new Set([...codesFromTimeline, ...codesFromAssess, ...codesFromGoals])).sort();
+    const codesFromCaseRecords = Array.from(new Set(caseRecords.map(r => r.clientCode)));
+    const allCodes = Array.from(new Set([
+      ...codesFromTimeline,
+      ...codesFromAssess,
+      ...codesFromGoals,
+      ...codesFromCaseRecords
+    ])).sort();
     return {
       highRiskCount: high,
       mediumRiskCount: medium,
       activeClientCodes: allCodes
     };
-  }, [assessments, goals]);
-
-  const handleAddAssessment = (a: RiskAssessment) => {
-    setAssessments(prev => [...prev, a]);
-  };
-
-  const handleDeleteAssessment = (id: string) => {
-    setAssessments(prev => prev.filter(a => a.id !== id));
-  };
-
-  const handleAddGoal = (g: InterventionGoal) => {
-    setGoals(prev => [...prev, g]);
-  };
-
-  const handleUpdateGoal = (g: InterventionGoal) => {
-    setGoals(prev => prev.map(item => item.id === g.id ? g : item));
-  };
-
-  const handleDeleteGoal = (id: string) => {
-    setGoals(prev => prev.filter(g => g.id !== id));
-  };
+  }, [assessments, goals, timeline, caseRecords]);
 
   const goalProgressCount = useMemo(() => {
     const activeGoals = goals.filter(g => g.status === "active");
@@ -1147,8 +1560,22 @@ function App() {
     ];
   }, [activeClientCodes.length, highRiskCount, mediumRiskCount, goalProgressCount]);
 
+  if (isLoading) {
+    return (
+      <main className="app-shell">
+        <div className="db-loading">
+          <div className="db-loading-spinner" />
+          <p>正在加载个案档案数据…</p>
+          <p className="db-loading-subtext">数据将自动保存到本地浏览器，刷新后不会丢失</p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
+      <ToastContainer toasts={toasts} />
+
       <section className="hero">
         <div>
           <p className="eyebrow">{project.id} · port {project.port}</p>
@@ -1220,42 +1647,172 @@ function App() {
               </strong>
             </div>
           </div>
+          <h2>离线存储</h2>
+          <div className="db-status-section">
+            <span className={`db-status-dot ${dbStatus.isConnected ? 'db-status-online' : 'db-status-offline'}`} />
+            <span className="db-status-text">
+              {dbStatus.isConnected
+                ? `IndexedDB v${dbStatus.version} 已连接`
+                : dbStatus.error
+                  ? dbStatus.error
+                  : '正在连接...'}
+            </span>
+          </div>
+          <div className="db-stats">
+            <div className="db-stat-item">
+              <span className="db-stat-label">个案记录</span>
+              <strong className="db-stat-value">{caseRecords.length}</strong>
+            </div>
+            <div className="db-stat-item">
+              <span className="db-stat-label">时间线</span>
+              <strong className="db-stat-value">{timeline.length}</strong>
+            </div>
+            <div className="db-stat-item">
+              <span className="db-stat-label">风险评估</span>
+              <strong className="db-stat-value">{assessments.length}</strong>
+            </div>
+            <div className="db-stat-item">
+              <span className="db-stat-label">干预目标</span>
+              <strong className="db-stat-value">{goals.length}</strong>
+            </div>
+          </div>
+          {showDBUpgradeNotice && (
+            <div className="db-upgrade-notice">
+              <p>✓ 数据库已升级</p>
+              <button onClick={() => setShowDBUpgradeNotice(false)}>知道了</button>
+            </div>
+          )}
+          {!isDBSupported && (
+            <div className="db-error-notice">
+              <p>⚠ 浏览器不支持离线存储</p>
+              <small>请使用 Chrome、Firefox、Safari 等现代浏览器</small>
+            </div>
+          )}
         </aside>
 
         <section className="panel">
           <div className="section-heading">
             <div>
               <p>{project.domain}</p>
-              <h2>记录字段</h2>
+              <h2>个案档案录入</h2>
             </div>
-            <button className="primary-action">新增记录</button>
+            <div className="section-actions">
+              <button className="secondary-action" onClick={handleResetToSampleData}>重置示例数据</button>
+              <button className="primary-action" onClick={openNewCaseForm}>新增个案记录</button>
+            </div>
           </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
+
+          {isCaseFormOpen && editingCaseRecord && (
+            <div className="case-form-panel">
+              <div className="case-form-grid">
+                <label>
+                  <span>来访者代号 *</span>
+                  <input
+                    value={editingCaseRecord.clientCode}
+                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, clientCode: e.target.value })}
+                    placeholder="例如：C-042"
+                  />
+                </label>
+                <label>
+                  <span>咨询主题 *</span>
+                  <input
+                    value={editingCaseRecord.consultationTopic}
+                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, consultationTopic: e.target.value })}
+                    placeholder="例如：焦虑障碍"
+                  />
+                </label>
+                <label>
+                  <span>会谈日期</span>
+                  <input
+                    type="date"
+                    value={editingCaseRecord.sessionDate}
+                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, sessionDate: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>情绪状态</span>
+                  <select
+                    value={editingCaseRecord.emotionalState}
+                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, emotionalState: e.target.value })}
+                  >
+                    {emotionalOptions.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="case-form-full">
+                  <span>主要困扰 *</span>
+                  <textarea
+                    value={editingCaseRecord.mainConcern}
+                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, mainConcern: e.target.value })}
+                    placeholder="描述来访者的主要困扰和问题表现"
+                    rows={2}
+                  />
+                </label>
+                <label className="case-form-full">
+                  <span>干预方法 *</span>
+                  <textarea
+                    value={editingCaseRecord.intervention}
+                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, intervention: e.target.value })}
+                    placeholder="描述本次咨询采用的干预技术和方法"
+                    rows={2}
+                  />
+                </label>
+                <label className="case-form-full">
+                  <span>下次目标</span>
+                  <textarea
+                    value={editingCaseRecord.nextGoal}
+                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, nextGoal: e.target.value })}
+                    placeholder="描述下次咨询前的家庭作业或练习目标"
+                    rows={2}
+                  />
+                </label>
+              </div>
+              <div className="case-form-actions">
+                <button onClick={handleCancelCaseForm}>取消</button>
+                <button className="primary-action" onClick={handleSaveCaseRecord}>
+                  {editingCaseRecord.id ? "更新记录" : "保存记录"}
+                </button>
+              </div>
+            </div>
+          )}
         </section>
       </section>
 
       <section className="records panel">
         <div className="section-heading">
           <div>
-            <p>示例数据</p>
+            <p>个案档案</p>
             <h2>近期记录</h2>
+            <p className="section-subtitle">共 {caseRecords.length} 条记录，数据已自动保存到本地浏览器</p>
           </div>
-          <button>导出摘要</button>
+          <button className="secondary-action">导出摘要</button>
         </div>
         <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
+          {caseRecords.length === 0 && (
+            <p className="tl-empty">暂无个案记录，点击「新增个案记录」开始录入</p>
+          )}
+          {caseRecords
+            .slice()
+            .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))
+            .map((record, index) => (
+            <article key={record.id} className="record-card">
               <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
+              <div className="record-body">
+                <div className="record-header">
+                  <h3>{record.clientCode}</h3>
+                  <span className="record-date">{record.sessionDate}</span>
+                  <span className="record-topic">{record.consultationTopic}</span>
+                </div>
+                <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
+                <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
+                {record.nextGoal && (
+                  <p className="record-next-goal"><strong>下次目标：</strong>{record.nextGoal}</p>
+                )}
+                <div className="record-actions">
+                  <button onClick={() => openEditCaseForm(record)}>编辑</button>
+                  <button className="tl-btn-danger" onClick={() => handleDeleteCaseRecord(record.id)}>删除</button>
+                </div>
               </div>
             </article>
           ))}
@@ -1277,7 +1834,13 @@ function App() {
         allClientCodes={activeClientCodes}
       />
 
-      <TimelineSection clientCodes={activeClientCodes} />
+      <TimelineSection
+        clientCodes={activeClientCodes}
+        records={timeline}
+        onAddRecord={handleAddTimeline}
+        onUpdateRecord={handleUpdateTimeline}
+        onDeleteRecord={handleDeleteTimeline}
+      />
     </main>
   );
 }
