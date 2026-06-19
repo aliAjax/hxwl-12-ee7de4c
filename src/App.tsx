@@ -98,6 +98,24 @@ const project = {
 
 const statusColors = ["status-ok", "status-watch", "status-danger"];
 
+function toLocalDateString(d: Date = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function addDaysToLocalDate(days: number, base: Date = new Date()): string {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return toLocalDateString(d);
+}
+
+function parseLocalDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
 export interface TimelineRecord {
   id: string;
   clientCode: string;
@@ -836,7 +854,7 @@ function TimelineSection({
     setEditingRecord({
       id: "",
       clientCode: selectedClient,
-      sessionDate: new Date().toISOString().slice(0, 10),
+      sessionDate: toLocalDateString(),
       topic: "",
       emotionalState: emotionalOptions[0],
       intervention: "",
@@ -1045,7 +1063,7 @@ function RiskAssessmentSection({
     const assessment: RiskAssessment = {
       id: "ra" + nextRiskId++,
       clientCode: selectedClient,
-      assessDate: now.toISOString().slice(0, 10),
+      assessDate: toLocalDateString(now),
       createdAt: now.toISOString(),
       dimensions: { ...formData },
       totalScore: score,
@@ -1247,7 +1265,7 @@ function classifyReminders(goals: InterventionGoal[], clientCode: string | null)
 
   for (const g of relevant) {
     if (g.nextPracticeDate && g.status === "active") {
-      const practiceDate = new Date(g.nextPracticeDate);
+      const practiceDate = parseLocalDate(g.nextPracticeDate);
       practiceDate.setHours(0, 0, 0, 0);
       if (practiceDate < now) {
         const diffDays = Math.floor((now.getTime() - practiceDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -1269,7 +1287,7 @@ function classifyReminders(goals: InterventionGoal[], clientCode: string | null)
     }
 
     if (g.status === "active" && g.lastActionDate) {
-      const lastDate = new Date(g.lastActionDate);
+      const lastDate = parseLocalDate(g.lastActionDate);
       lastDate.setHours(0, 0, 0, 0);
       if (lastDate < staleThreshold) {
         const diffDays = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
@@ -1522,10 +1540,10 @@ function GoalTrackingSection({
       totalSteps: 4,
       completedSteps: 0,
       lastAction: "",
-      lastActionDate: new Date().toISOString().slice(0, 10),
+      lastActionDate: toLocalDateString(),
       nextPractice: "",
       nextPracticeDate: "",
-      createdAt: new Date().toISOString().slice(0, 10),
+      createdAt: toLocalDateString(),
     });
     setIsFormOpen(true);
   };
@@ -1562,10 +1580,8 @@ function GoalTrackingSection({
   };
 
   const handleQuickAction = (goal: InterventionGoal, action: "complete" | "extend" | "advance") => {
-    const today = new Date().toISOString().slice(0, 10);
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    const nextWeekStr = nextWeek.toISOString().slice(0, 10);
+    const today = toLocalDateString();
+    const nextWeekStr = addDaysToLocalDate(7);
 
     if (action === "complete") {
       const newCompleted = Math.min(goal.completedSteps + 1, goal.totalSteps);
@@ -2331,7 +2347,7 @@ function SupervisionWorkbench({
     const newFeedback: SupervisionFeedback = {
       id: "fb" + nextFeedbackId++,
       supervisorName: "王督导",
-      feedbackDate: new Date().toISOString().slice(0, 10),
+      feedbackDate: toLocalDateString(),
       caseConceptualization: "",
       interventionSuggestions: "",
       riskManagement: "",
@@ -4279,7 +4295,7 @@ function App() {
       id: "",
       clientCode: "",
       consultationTopic: "",
-      sessionDate: new Date().toISOString().slice(0, 10),
+      sessionDate: toLocalDateString(),
       mainConcern: "",
       emotionalState: emotionalOptions[0],
       intervention: "",
