@@ -142,6 +142,47 @@ export interface CaseRecord {
   updatedAt: string;
 }
 
+export type SupervisionStatus = "draft" | "pending" | "feedback";
+
+export interface SessionClip {
+  id: string;
+  timestamp: string;
+  description: string;
+  transcript: string;
+}
+
+export interface SupervisionFeedback {
+  id: string;
+  supervisorName: string;
+  feedbackDate: string;
+  caseConceptualization: string;
+  interventionSuggestions: string;
+  riskManagement: string;
+  ethicalConsiderations: string;
+  overallEvaluation: string;
+  overallRating: number;
+}
+
+export interface SupervisionRecord {
+  id: string;
+  clientCode: string;
+  counselorName: string;
+  supervisorName: string;
+  consultationTopic: string;
+  status: SupervisionStatus;
+  caseSummary: string;
+  riskChanges: string;
+  interventionGoals: string;
+  sessionClips: SessionClip[];
+  feedbackHistory: SupervisionFeedback[];
+  submittedAt?: string;
+  lastFeedbackAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type UserRole = "counselor" | "supervisor";
+
 const initialCaseRecords: CaseRecord[] = [
   {
     id: "cr1",
@@ -231,6 +272,105 @@ const goalStatusColors: Record<GoalStatus, string> = {
   paused: "goal-paused",
   completed: "goal-completed"
 };
+
+const supervisionStatusLabels: Record<SupervisionStatus, string> = {
+  draft: "草稿",
+  pending: "待督导",
+  feedback: "已反馈"
+};
+
+const supervisionStatusColors: Record<SupervisionStatus, string> = {
+  draft: "sup-status-draft",
+  pending: "sup-status-pending",
+  feedback: "sup-status-feedback"
+};
+
+const initialSupervisionRecords: SupervisionRecord[] = [
+  {
+    id: "sv1",
+    clientCode: "C-042",
+    counselorName: "李咨询师",
+    supervisorName: "王督导",
+    consultationTopic: "焦虑障碍",
+    status: "feedback",
+    caseSummary: "来访者C-042，女性，28岁，互联网产品经理。因工作压力导致持续性焦虑伴失眠症状来访，每周一次咨询，已进行6次会谈。主要表现为：工作时难以集中注意力，反复担心项目延期，夜间入睡困难且易惊醒。近期因公司组织架构调整，焦虑情绪有所加剧。",
+    riskChanges: "初始评估风险等级为中风险（14分），睡眠和情绪维度得分较高。经过4次咨询后，睡眠质量略有改善，但情绪波动仍较明显。近期因工作变动，自伤维度得分从2分上升至3分，需重点关注。",
+    interventionGoals: "1. 焦虑触发场景觉察：已完成2/5步骤，能够识别3个主要焦虑触发场景\n2. 认知重构能力建立：已完成1/6步骤，初步学习识别灾难化思维\n3. 睡眠改善计划：正在进行，睡眠时长从5小时提升至6小时左右",
+    sessionClips: [
+      {
+        id: "clip1",
+        timestamp: "第3次会谈 25:30",
+        description: "来访者谈及工作压力时的情绪爆发",
+        transcript: "来访者：我真的觉得撑不下去了，每天一想到要上班就心慌...（声音哽咽）我也不知道为什么，就是控制不住地担心。咨询师：听起来这种担心让你很疲惫，能具体说说最近一次有这种感觉是什么时候吗？"
+      },
+      {
+        id: "clip2",
+        timestamp: "第5次会谈 12:15",
+        description: "认知重构练习中的关键突破",
+        transcript: "咨询师：如果项目真的延期了，你觉得最糟糕的结果是什么？来访者：可能会被辞退吧... 咨询师：嗯，这是一个可能。那你觉得这个可能性有多大呢？来访者：...其实好像也没那么大，之前也有项目延期过，好像也没怎么样。"
+      }
+    ],
+    feedbackHistory: [
+      {
+        id: "fb1",
+        supervisorName: "王督导",
+        feedbackDate: "2026-06-12",
+        caseConceptualization: "个案概念化基本准确，能够从来访者的认知模式入手理解焦虑的形成机制。建议补充依恋风格的探索，了解其早年经历对当前焦虑模式的影响。",
+        interventionSuggestions: "1. 认知重构技术运用得当，但在识别自动化思维的深度上还可以加强\n2. 建议加入呼吸放松训练的日常练习督导，确保来访者正确掌握\n3. 可以考虑引入行为激活技术，帮助来访者逐步恢复功能\n4. 第5次会谈中的苏格拉底式提问运用较好，继续保持",
+        riskManagement: "风险评估及时，能够关注到自伤维度的变化。建议：\n1. 制定更具体的安全计划，包括危机联系人\n2. 增加情绪日记的记录频率\n3. 考虑是否需要转介精神科评估药物治疗的可能性",
+        ethicalConsiderations: "咨询边界清晰，知情同意到位。需要注意：\n1. 来访者近期情绪波动较大，需确认咨询频率是否合适\n2. 保密原则在高风险情况下的处理预案需明确",
+        overallEvaluation: "整体咨询思路清晰，技术运用基本规范。在个案概念化的深度和风险干预的具体性上有提升空间。继续保持每周督导的频率。",
+        overallRating: 4
+      }
+    ],
+    submittedAt: "2026-06-11T10:00:00Z",
+    lastFeedbackAt: "2026-06-12T15:30:00Z",
+    createdAt: "2026-06-05T09:00:00Z",
+    updatedAt: "2026-06-12T15:30:00Z"
+  },
+  {
+    id: "sv2",
+    clientCode: "C-119",
+    counselorName: "李咨询师",
+    supervisorName: "王督导",
+    consultationTopic: "亲密关系",
+    status: "pending",
+    caseSummary: "来访者C-119，男性，32岁，设计师。因与伴侣沟通困难、经常冷战来访，每两周一次咨询，已进行3次会谈。来访者在亲密关系中表现出明显的回避模式，遇到冲突时倾向于退缩和冷战。",
+    riskChanges: "风险等级为关注（9分），情绪维度得分稍高。整体风险可控，但关系冲突带来的情绪困扰较明显。",
+    interventionGoals: "1. 非暴力沟通表达：已完成2/4步骤，能够在会谈中进行角色扮演\n2. 回避模式识别：已完成，梳理出3个典型回避场景",
+    sessionClips: [
+      {
+        id: "clip3",
+        timestamp: "第2次会谈 18:45",
+        description: "来访者描述回避模式的典型场景",
+        transcript: "来访者：她一跟我吵架，我就只想躲起来，什么都不想说。咨询师：那个时候你心里是什么感觉？来访者：...就是觉得很累，说了也没用，不如不说。"
+      }
+    ],
+    feedbackHistory: [],
+    submittedAt: "2026-06-15T14:00:00Z",
+    createdAt: "2026-06-08T11:00:00Z",
+    updatedAt: "2026-06-15T14:00:00Z"
+  },
+  {
+    id: "sv3",
+    clientCode: "C-203",
+    counselorName: "张咨询师",
+    supervisorName: "王督导",
+    consultationTopic: "职业压力",
+    status: "draft",
+    caseSummary: "来访者C-203，女性，35岁，部门经理。因工作负荷过大、职业倦怠感明显来访，每周一次咨询，已进行2次会谈。",
+    riskChanges: "风险等级为稳定（7分），整体状态良好。",
+    interventionGoals: "1. 工作时间边界设定：刚启动，完成边界缺失点梳理\n2. 压力源清单整理：已暂停",
+    sessionClips: [],
+    feedbackHistory: [],
+    createdAt: "2026-06-14T16:00:00Z",
+    updatedAt: "2026-06-16T10:00:00Z"
+  }
+];
+
+let nextSupervisionId = 4;
+let nextFeedbackId = 2;
+let nextClipId = 4;
 
 const initialGoals: InterventionGoal[] = [
   {
@@ -1164,6 +1304,692 @@ function GoalTrackingSection({
   );
 }
 
+function SupervisionWorkbench({
+  records,
+  role,
+  onRoleChange,
+  onAddRecord,
+  onUpdateRecord,
+  onSubmitForSupervision,
+  onSaveDraft,
+  onAddFeedback
+}: {
+  records: SupervisionRecord[];
+  role: UserRole;
+  onRoleChange: (role: UserRole) => void;
+  onAddRecord: (record: SupervisionRecord) => void;
+  onUpdateRecord: (record: SupervisionRecord) => void;
+  onSubmitForSupervision: (record: SupervisionRecord) => void;
+  onSaveDraft: (record: SupervisionRecord) => void;
+  onAddFeedback: (recordId: string, feedback: SupervisionFeedback) => void;
+}) {
+  const [selectedRecord, setSelectedRecord] = useState<SupervisionRecord | null>(null);
+  const [statusFilter, setStatusFilter] = useState<SupervisionStatus | "all">(role === "supervisor" ? "pending" : "all");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingRecord, setEditingRecord] = useState<SupervisionRecord | null>(null);
+  const [isGivingFeedback, setIsGivingFeedback] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState<SupervisionFeedback | null>(null);
+  const [viewingHistory, setViewingHistory] = useState(false);
+
+  const filteredRecords = useMemo(() => {
+    let filtered = records;
+    if (statusFilter !== "all") {
+      filtered = filtered.filter(r => r.status === statusFilter);
+    }
+    return filtered.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [records, statusFilter]);
+
+  const statusCounts = useMemo(() => ({
+    all: records.length,
+    draft: records.filter(r => r.status === "draft").length,
+    pending: records.filter(r => r.status === "pending").length,
+    feedback: records.filter(r => r.status === "feedback").length,
+  }), [records]);
+
+  const openNewRecord = () => {
+    const newRecord: SupervisionRecord = {
+      id: "",
+      clientCode: "",
+      counselorName: "李咨询师",
+      supervisorName: "王督导",
+      consultationTopic: "",
+      status: "draft",
+      caseSummary: "",
+      riskChanges: "",
+      interventionGoals: "",
+      sessionClips: [],
+      feedbackHistory: [],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setEditingRecord(newRecord);
+    setIsEditing(true);
+  };
+
+  const openEditRecord = (record: SupervisionRecord) => {
+    if (record.status !== "draft") return;
+    setEditingRecord({ ...record });
+    setIsEditing(true);
+  };
+
+  const handleSaveDraft = () => {
+    if (!editingRecord) return;
+    if (!editingRecord.clientCode || !editingRecord.consultationTopic) return;
+    const updated = { ...editingRecord, updatedAt: new Date().toISOString() };
+    if (updated.id) {
+      onUpdateRecord(updated);
+    } else {
+      const newRecord = { ...updated, id: "sv" + nextSupervisionId++ };
+      onAddRecord(newRecord);
+    }
+    setIsEditing(false);
+    setEditingRecord(null);
+  };
+
+  const handleSubmitForSupervision = () => {
+    if (!editingRecord) return;
+    if (!editingRecord.clientCode || !editingRecord.consultationTopic || !editingRecord.caseSummary) return;
+    const updated: SupervisionRecord = {
+      ...editingRecord,
+      status: "pending",
+      submittedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    if (updated.id) {
+      onSubmitForSupervision(updated);
+    } else {
+      const newRecord = { ...updated, id: "sv" + nextSupervisionId++ };
+      onAddRecord(newRecord);
+    }
+    setIsEditing(false);
+    setEditingRecord(null);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditingRecord(null);
+  };
+
+  const openFeedbackForm = (record: SupervisionRecord) => {
+    const newFeedback: SupervisionFeedback = {
+      id: "fb" + nextFeedbackId++,
+      supervisorName: "王督导",
+      feedbackDate: new Date().toISOString().slice(0, 10),
+      caseConceptualization: "",
+      interventionSuggestions: "",
+      riskManagement: "",
+      ethicalConsiderations: "",
+      overallEvaluation: "",
+      overallRating: 3,
+    };
+    setFeedbackForm(newFeedback);
+    setIsGivingFeedback(true);
+    setSelectedRecord(record);
+  };
+
+  const handleSaveFeedback = () => {
+    if (!feedbackForm || !selectedRecord) return;
+    if (!feedbackForm.caseConceptualization || !feedbackForm.interventionSuggestions) return;
+    onAddFeedback(selectedRecord.id, feedbackForm);
+    setIsGivingFeedback(false);
+    setFeedbackForm(null);
+  };
+
+  const handleCancelFeedback = () => {
+    setIsGivingFeedback(false);
+    setFeedbackForm(null);
+  };
+
+  const updateEditingField = (field: keyof SupervisionRecord, value: string) => {
+    if (!editingRecord) return;
+    setEditingRecord({ ...editingRecord, [field]: value });
+  };
+
+  const updateFeedbackField = (field: keyof SupervisionFeedback, value: string | number) => {
+    if (!feedbackForm) return;
+    setFeedbackForm({ ...feedbackForm, [field]: value });
+  };
+
+  const addSessionClip = () => {
+    if (!editingRecord) return;
+    const newClip: SessionClip = {
+      id: "clip" + nextClipId++,
+      timestamp: "",
+      description: "",
+      transcript: "",
+    };
+    setEditingRecord({
+      ...editingRecord,
+      sessionClips: [...editingRecord.sessionClips, newClip],
+    });
+  };
+
+  const updateClip = (clipId: string, field: keyof SessionClip, value: string) => {
+    if (!editingRecord) return;
+    setEditingRecord({
+      ...editingRecord,
+      sessionClips: editingRecord.sessionClips.map(c =>
+        c.id === clipId ? { ...c, [field]: value } : c
+      ),
+    });
+  };
+
+  const removeClip = (clipId: string) => {
+    if (!editingRecord) return;
+    setEditingRecord({
+      ...editingRecord,
+      sessionClips: editingRecord.sessionClips.filter(c => c.id !== clipId),
+    });
+  };
+
+  const renderStars = (rating: number, interactive = false, onChange?: (r: number) => void) => {
+    return (
+      <div className="star-rating">
+        {[1, 2, 3, 4, 5].map(star => (
+          <span
+            key={star}
+            className={`star ${star <= rating ? "filled" : ""} ${interactive ? "interactive" : ""}`}
+            onClick={() => interactive && onChange && onChange(star)}
+          >
+            ★
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  if (isEditing && editingRecord && role === "counselor") {
+    return (
+      <section className="records panel">
+        <div className="section-heading">
+          <div>
+            <p>督导评审</p>
+            <h2>{editingRecord.id ? "编辑督导申请" : "新建督导申请"}</h2>
+          </div>
+          <button onClick={handleCancelEdit}>返回列表</button>
+        </div>
+
+        <div className="sup-edit-form">
+          <div className="tl-form-grid">
+            <label>
+              <span>来访者代号 *</span>
+              <input
+                value={editingRecord.clientCode}
+                onChange={e => updateEditingField("clientCode", e.target.value)}
+                placeholder="例如：C-042"
+              />
+            </label>
+            <label>
+              <span>咨询主题 *</span>
+              <input
+                value={editingRecord.consultationTopic}
+                onChange={e => updateEditingField("consultationTopic", e.target.value)}
+                placeholder="例如：焦虑障碍"
+              />
+            </label>
+            <label>
+              <span>咨询师</span>
+              <input value={editingRecord.counselorName} disabled />
+            </label>
+            <label>
+              <span>督导</span>
+              <input value={editingRecord.supervisorName} disabled />
+            </label>
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">个案摘要</h3>
+            <textarea
+              className="sup-textarea"
+              value={editingRecord.caseSummary}
+              onChange={e => updateEditingField("caseSummary", e.target.value)}
+              placeholder="请详细描述个案背景、来访原因、主要症状等"
+              rows={5}
+            />
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">风险变化</h3>
+            <textarea
+              className="sup-textarea"
+              value={editingRecord.riskChanges}
+              onChange={e => updateEditingField("riskChanges", e.target.value)}
+              placeholder="描述风险等级的变化趋势、关键维度的变化及原因"
+              rows={4}
+            />
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">干预目标</h3>
+            <textarea
+              className="sup-textarea"
+              value={editingRecord.interventionGoals}
+              onChange={e => updateEditingField("interventionGoals", e.target.value)}
+              placeholder="列出当前的干预目标及其进展情况"
+              rows={4}
+            />
+          </div>
+
+          <div className="sup-section">
+            <div className="sup-section-header">
+              <h3 className="sup-section-title">会谈片段</h3>
+              <button className="secondary-btn" onClick={addSessionClip}>添加片段</button>
+            </div>
+            {editingRecord.sessionClips.length === 0 && (
+              <p className="tl-empty">暂不会谈片段，点击"添加片段"开始录入</p>
+            )}
+            {editingRecord.sessionClips.map((clip, index) => (
+              <div key={clip.id} className="clip-edit-card">
+                <div className="clip-edit-header">
+                  <span className="clip-index">片段 {index + 1}</span>
+                  <button className="tl-btn-danger" onClick={() => removeClip(clip.id)}>删除</button>
+                </div>
+                <div className="tl-form-grid">
+                  <label className="tl-form-full">
+                    <span>时间标记</span>
+                    <input
+                      value={clip.timestamp}
+                      onChange={e => updateClip(clip.id, "timestamp", e.target.value)}
+                      placeholder="例如：第3次会谈 25:30"
+                    />
+                  </label>
+                  <label className="tl-form-full">
+                    <span>片段描述</span>
+                    <input
+                      value={clip.description}
+                      onChange={e => updateClip(clip.id, "description", e.target.value)}
+                      placeholder="简要描述这个片段的内容"
+                    />
+                  </label>
+                  <label className="tl-form-full">
+                    <span>对话内容</span>
+                    <textarea
+                      value={clip.transcript}
+                      onChange={e => updateClip(clip.id, "transcript", e.target.value)}
+                      placeholder="录入选段的对话内容"
+                      rows={4}
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="sup-edit-actions">
+            <button onClick={handleCancelEdit}>取消</button>
+            <button onClick={handleSaveDraft}>保存草稿</button>
+            <button className="primary-action" onClick={handleSubmitForSupervision}>提交督导</button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (isGivingFeedback && feedbackForm && selectedRecord && role === "supervisor") {
+    return (
+      <section className="records panel">
+        <div className="section-heading">
+          <div>
+            <p>督导评审</p>
+            <h2>给出督导意见 — {selectedRecord.clientCode}</h2>
+          </div>
+          <button onClick={handleCancelFeedback}>返回详情</button>
+        </div>
+
+        <div className="sup-feedback-form">
+          <div className="sup-feedback-case-info">
+            <div className="case-info-item">
+              <span className="case-info-label">来访者</span>
+              <strong>{selectedRecord.clientCode}</strong>
+            </div>
+            <div className="case-info-item">
+              <span className="case-info-label">咨询主题</span>
+              <strong>{selectedRecord.consultationTopic}</strong>
+            </div>
+            <div className="case-info-item">
+              <span className="case-info-label">咨询师</span>
+              <strong>{selectedRecord.counselorName}</strong>
+            </div>
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">个案概念化评价</h3>
+            <textarea
+              className="sup-textarea"
+              value={feedbackForm.caseConceptualization}
+              onChange={e => updateFeedbackField("caseConceptualization", e.target.value)}
+              placeholder="评价咨询师对个案的理解和概念化是否准确"
+              rows={4}
+            />
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">干预技术建议</h3>
+            <textarea
+              className="sup-textarea"
+              value={feedbackForm.interventionSuggestions}
+              onChange={e => updateFeedbackField("interventionSuggestions", e.target.value)}
+              placeholder="针对干预方法的具体建议和改进方向"
+              rows={5}
+            />
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">风险管理指导</h3>
+            <textarea
+              className="sup-textarea"
+              value={feedbackForm.riskManagement}
+              onChange={e => updateFeedbackField("riskManagement", e.target.value)}
+              placeholder="关于风险评估和管理的指导意见"
+              rows={4}
+            />
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">伦理议题讨论</h3>
+            <textarea
+              className="sup-textarea"
+              value={feedbackForm.ethicalConsiderations}
+              onChange={e => updateFeedbackField("ethicalConsiderations", e.target.value)}
+              placeholder="相关的伦理议题和注意事项"
+              rows={3}
+            />
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">总体评价</h3>
+            <textarea
+              className="sup-textarea"
+              value={feedbackForm.overallEvaluation}
+              onChange={e => updateFeedbackField("overallEvaluation", e.target.value)}
+              placeholder="对本次咨询的总体评价和后续建议"
+              rows={3}
+            />
+          </div>
+
+          <div className="sup-section">
+            <h3 className="sup-section-title">综合评分</h3>
+            <div className="sup-rating-row">
+              {renderStars(feedbackForm.overallRating, true, (r) => updateFeedbackField("overallRating", r))}
+              <span className="rating-text">{feedbackForm.overallRating} / 5</span>
+            </div>
+          </div>
+
+          <div className="sup-edit-actions">
+            <button onClick={handleCancelFeedback}>取消</button>
+            <button className="primary-action" onClick={handleSaveFeedback}>提交督导意见</button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  if (selectedRecord) {
+    const latestFeedback = selectedRecord.feedbackHistory.length > 0
+      ? selectedRecord.feedbackHistory[selectedRecord.feedbackHistory.length - 1]
+      : null;
+
+    return (
+      <section className="records panel">
+        <div className="section-heading">
+          <div>
+            <p>督导评审</p>
+            <h2>{selectedRecord.clientCode} — {selectedRecord.consultationTopic}</h2>
+            <p className="section-subtitle">
+              咨询师：{selectedRecord.counselorName} · 督导：{selectedRecord.supervisorName}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button onClick={() => setSelectedRecord(null)}>返回列表</button>
+            {role === "counselor" && selectedRecord.status === "draft" && (
+              <button className="primary-action" onClick={() => openEditRecord(selectedRecord)}>编辑</button>
+            )}
+            {role === "supervisor" && selectedRecord.status === "pending" && (
+              <button className="primary-action" onClick={() => openFeedbackForm(selectedRecord)}>给出督导意见</button>
+            )}
+          </div>
+        </div>
+
+        <div className="sup-detail-status">
+          <span className={`sup-status-badge ${supervisionStatusColors[selectedRecord.status]}`}>
+            {supervisionStatusLabels[selectedRecord.status]}
+          </span>
+          {selectedRecord.submittedAt && (
+            <span className="sup-status-meta">提交于 {new Date(selectedRecord.submittedAt).toLocaleDateString()}</span>
+          )}
+          {selectedRecord.lastFeedbackAt && (
+            <span className="sup-status-meta">上次反馈 {new Date(selectedRecord.lastFeedbackAt).toLocaleDateString()}</span>
+          )}
+        </div>
+
+        <div className="sup-detail-grid">
+          <div className="sup-detail-col">
+            <div className="sup-section">
+              <h3 className="sup-section-title">个案摘要</h3>
+              <p className="sup-detail-text">{selectedRecord.caseSummary || "暂无内容"}</p>
+            </div>
+
+            <div className="sup-section">
+              <h3 className="sup-section-title">风险变化</h3>
+              <p className="sup-detail-text">{selectedRecord.riskChanges || "暂无内容"}</p>
+            </div>
+
+            <div className="sup-section">
+              <h3 className="sup-section-title">干预目标</h3>
+              <p className="sup-detail-text sup-pre-wrap">{selectedRecord.interventionGoals || "暂无内容"}</p>
+            </div>
+          </div>
+
+          <div className="sup-detail-col">
+            <div className="sup-section">
+              <div className="sup-section-header">
+                <h3 className="sup-section-title">会谈片段</h3>
+                <span className="sup-count-badge">{selectedRecord.sessionClips.length} 段</span>
+              </div>
+              {selectedRecord.sessionClips.length === 0 && (
+                <p className="tl-empty">暂不会谈片段</p>
+              )}
+              {selectedRecord.sessionClips.map(clip => (
+                <div key={clip.id} className="clip-view-card">
+                  <div className="clip-view-header">
+                    <span className="clip-timestamp">{clip.timestamp}</span>
+                  </div>
+                  <p className="clip-description">{clip.description}</p>
+                  <div className="clip-transcript">
+                    <p className="clip-transcript-label">对话内容</p>
+                    <p className="clip-transcript-text">{clip.transcript}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {latestFeedback && !viewingHistory && (
+          <div className="sup-section">
+            <div className="sup-section-header">
+              <h3 className="sup-section-title">最新督导意见</h3>
+              {selectedRecord.feedbackHistory.length > 1 && (
+                <button className="text-btn" onClick={() => setViewingHistory(true)}>
+                  查看全部历史 ({selectedRecord.feedbackHistory.length} 条)
+                </button>
+              )}
+            </div>
+            <div className="feedback-card">
+              <div className="feedback-header">
+                <div className="feedback-author">
+                  <span className="feedback-name">{latestFeedback.supervisorName}</span>
+                  <span className="feedback-date">{latestFeedback.feedbackDate}</span>
+                </div>
+                {renderStars(latestFeedback.overallRating)}
+              </div>
+              <div className="feedback-body">
+                <div className="feedback-section">
+                  <h4>个案概念化</h4>
+                  <p>{latestFeedback.caseConceptualization}</p>
+                </div>
+                <div className="feedback-section">
+                  <h4>干预技术建议</h4>
+                  <p className="sup-pre-wrap">{latestFeedback.interventionSuggestions}</p>
+                </div>
+                <div className="feedback-section">
+                  <h4>风险管理指导</h4>
+                  <p className="sup-pre-wrap">{latestFeedback.riskManagement}</p>
+                </div>
+                <div className="feedback-section">
+                  <h4>伦理议题</h4>
+                  <p className="sup-pre-wrap">{latestFeedback.ethicalConsiderations}</p>
+                </div>
+                <div className="feedback-section">
+                  <h4>总体评价</h4>
+                  <p>{latestFeedback.overallEvaluation}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {viewingHistory && (
+          <div className="sup-section">
+            <div className="sup-section-header">
+              <h3 className="sup-section-title">督导历史记录</h3>
+              <button className="text-btn" onClick={() => setViewingHistory(false)}>返回最新</button>
+            </div>
+            <div className="feedback-history-list">
+              {[...selectedRecord.feedbackHistory].reverse().map((fb, index) => (
+                <div key={fb.id} className="feedback-history-item">
+                  <div className="feedback-history-version">
+                    <span className="version-badge">v{selectedRecord.feedbackHistory.length - index}</span>
+                    <span className="version-date">{fb.feedbackDate}</span>
+                  </div>
+                  <div className="feedback-card history">
+                    <div className="feedback-header">
+                      <div className="feedback-author">
+                        <span className="feedback-name">{fb.supervisorName}</span>
+                      </div>
+                      {renderStars(fb.overallRating)}
+                    </div>
+                    <div className="feedback-body">
+                      <div className="feedback-section">
+                        <h4>个案概念化</h4>
+                        <p>{fb.caseConceptualization}</p>
+                      </div>
+                      <div className="feedback-section">
+                        <h4>干预技术建议</h4>
+                        <p className="sup-pre-wrap">{fb.interventionSuggestions}</p>
+                      </div>
+                      <div className="feedback-section">
+                        <h4>风险管理指导</h4>
+                        <p className="sup-pre-wrap">{fb.riskManagement}</p>
+                      </div>
+                      <div className="feedback-section">
+                        <h4>伦理议题</h4>
+                        <p className="sup-pre-wrap">{fb.ethicalConsiderations}</p>
+                      </div>
+                      <div className="feedback-section">
+                        <h4>总体评价</h4>
+                        <p>{fb.overallEvaluation}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  return (
+    <section className="records panel">
+      <div className="section-heading">
+        <div>
+          <p>督导评审工作台</p>
+          <h2>{role === "supervisor" ? "待评审个案" : "我的督导申请"}</h2>
+          <p className="section-subtitle">
+            共 {records.length} 条督导记录
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <div className="role-switcher">
+            <button
+              className={`role-btn ${role === "counselor" ? "active" : ""}`}
+              onClick={() => { onRoleChange("counselor"); setStatusFilter("all"); }}
+            >
+              咨询师视角
+            </button>
+            <button
+              className={`role-btn ${role === "supervisor" ? "active" : ""}`}
+              onClick={() => { onRoleChange("supervisor"); setStatusFilter("pending"); }}
+            >
+              督导视角
+            </button>
+          </div>
+          {role === "counselor" && (
+            <button className="primary-action" onClick={openNewRecord}>新建申请</button>
+          )}
+        </div>
+      </div>
+
+      <div className="sup-status-tabs">
+        {(role === "supervisor"
+          ? (["pending", "feedback", "draft"] as const)
+          : (["all", "draft", "pending", "feedback"] as const)
+        ).map(status => (
+          <button
+            key={status}
+            className={`sup-status-tab ${statusFilter === status ? "active" : ""} ${status !== "all" ? supervisionStatusColors[status as SupervisionStatus] : ""}`}
+            onClick={() => setStatusFilter(status as SupervisionStatus | "all")}
+          >
+            {status === "all" ? "全部" : supervisionStatusLabels[status as SupervisionStatus]}
+            <span className="sup-status-count">
+              {status === "all" ? statusCounts.all : statusCounts[status as SupervisionStatus]}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <div className="sup-record-list">
+        {filteredRecords.length === 0 && (
+          <p className="tl-empty">
+            {statusFilter === "all"
+              ? "暂无督导记录"
+              : `暂无${supervisionStatusLabels[statusFilter as SupervisionStatus]}的记录`}
+          </p>
+        )}
+        {filteredRecords.map(record => (
+          <article key={record.id} className="sup-record-card" onClick={() => setSelectedRecord(record)}>
+            <div className="sup-record-left">
+              <div className="sup-record-header">
+                <h3 className="sup-record-title">{record.clientCode}</h3>
+                <span className={`sup-status-badge ${supervisionStatusColors[record.status]}`}>
+                  {supervisionStatusLabels[record.status]}
+                </span>
+              </div>
+              <p className="sup-record-topic">{record.consultationTopic}</p>
+              <p className="sup-record-summary">
+                {record.caseSummary?.slice(0, 100) || "暂无摘要"}
+                {record.caseSummary?.length > 100 ? "..." : ""}
+              </p>
+            </div>
+            <div className="sup-record-right">
+              <div className="sup-record-meta">
+                <span>咨询师：{record.counselorName}</span>
+                <span>片段：{record.sessionClips.length} 段</span>
+                <span>反馈：{record.feedbackHistory.length} 条</span>
+              </div>
+              <div className="sup-record-date">
+                更新于 {new Date(record.updatedAt).toLocaleDateString()}
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 interface Toast {
   id: number;
   message: string;
@@ -1189,6 +2015,8 @@ function App() {
   const [assessments, setAssessments] = useState<RiskAssessment[]>(initialRiskAssessments);
   const [goals, setGoals] = useState<InterventionGoal[]>(initialGoals);
   const [caseRecords, setCaseRecords] = useState<CaseRecord[]>(initialCaseRecords);
+  const [supervisionRecords, setSupervisionRecords] = useState<SupervisionRecord[]>(initialSupervisionRecords);
+  const [currentRole, setCurrentRole] = useState<UserRole>("counselor");
   const [isLoading, setIsLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dbStatus, setDbStatus] = useState<DBStatus>({ isSupported: true, isConnected: false, version: 0 });
@@ -1511,6 +2339,45 @@ function App() {
     setGoals(prev => prev.filter(g => g.id !== id));
     persistGoalDelete(id);
   }, [persistGoalDelete]);
+
+  const handleAddSupervisionRecord = useCallback((record: SupervisionRecord) => {
+    setSupervisionRecords(prev => [...prev, record]);
+    showToast("督导申请已保存", "success");
+  }, [showToast]);
+
+  const handleUpdateSupervisionRecord = useCallback((record: SupervisionRecord) => {
+    setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    showToast("督导申请已更新", "success");
+  }, [showToast]);
+
+  const handleSubmitForSupervision = useCallback((record: SupervisionRecord) => {
+    setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    showToast("已提交督导评审", "success");
+  }, [showToast]);
+
+  const handleSaveDraft = useCallback((record: SupervisionRecord) => {
+    setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    showToast("草稿已保存", "success");
+  }, [showToast]);
+
+  const handleAddFeedback = useCallback((recordId: string, feedback: SupervisionFeedback) => {
+    setSupervisionRecords(prev => prev.map(r => {
+      if (r.id !== recordId) return r;
+      return {
+        ...r,
+        status: "feedback",
+        feedbackHistory: [...r.feedbackHistory, feedback],
+        lastFeedbackAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }));
+    showToast("督导意见已提交", "success");
+  }, [showToast]);
+
+  const handleRoleChange = useCallback((role: UserRole) => {
+    setCurrentRole(role);
+    showToast(`已切换到${role === "counselor" ? "咨询师" : "督导"}视角`, "info");
+  }, [showToast]);
 
   const { highRiskCount, mediumRiskCount, activeClientCodes } = useMemo(() => {
     const latestByClient = new Map<string, RiskAssessment>();
@@ -1840,6 +2707,17 @@ function App() {
         onAddRecord={handleAddTimeline}
         onUpdateRecord={handleUpdateTimeline}
         onDeleteRecord={handleDeleteTimeline}
+      />
+
+      <SupervisionWorkbench
+        records={supervisionRecords}
+        role={currentRole}
+        onRoleChange={handleRoleChange}
+        onAddRecord={handleAddSupervisionRecord}
+        onUpdateRecord={handleUpdateSupervisionRecord}
+        onSubmitForSupervision={handleSubmitForSupervision}
+        onSaveDraft={handleSaveDraft}
+        onAddFeedback={handleAddFeedback}
       />
     </main>
   );
