@@ -2156,15 +2156,48 @@ function DataOverviewSection({
   }, [timeline, assessments, goals, caseRecords, filters]);
 
   const summaryData = useMemo<OverviewSummaryData>(() => {
-    const filteredTimeline = timeline.filter(r => filteredClientCodes.includes(r.clientCode));
-    const filteredAssessments = assessments.filter(r => filteredClientCodes.includes(r.clientCode));
-    const filteredGoals = goals.filter(r => filteredClientCodes.includes(r.clientCode));
-    const filteredCaseRecords = caseRecords.filter(r => filteredClientCodes.includes(r.clientCode));
+    const inDateRange = (dateStr: string | undefined): boolean => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      if (filters.startDate && d < new Date(filters.startDate)) return false;
+      if (filters.endDate) {
+        const end = new Date(filters.endDate);
+        end.setHours(23, 59, 59, 999);
+        if (d > end) return false;
+      }
+      return true;
+    };
+
+    const hasDateFilter = !!filters.startDate || !!filters.endDate;
+
+    const timelineInRange = timeline.filter(r => {
+      if (!filteredClientCodes.includes(r.clientCode)) return false;
+      if (hasDateFilter) return inDateRange(r.sessionDate);
+      return true;
+    });
+
+    const caseRecordsInRange = caseRecords.filter(r => {
+      if (!filteredClientCodes.includes(r.clientCode)) return false;
+      if (hasDateFilter) return inDateRange(r.sessionDate);
+      return true;
+    });
+
+    const assessmentsInRange = assessments.filter(r => {
+      if (!filteredClientCodes.includes(r.clientCode)) return false;
+      if (hasDateFilter) return inDateRange(r.assessDate);
+      return true;
+    });
+
+    const goalsInRange = goals.filter(r => {
+      if (!filteredClientCodes.includes(r.clientCode)) return false;
+      if (hasDateFilter) return inDateRange(r.createdAt) || inDateRange(r.lastActionDate);
+      return true;
+    });
 
     const topicMap = new Map<string, { caseCount: number; sessionCount: number }>();
     const topicClients = new Map<string, Set<string>>();
 
-    filteredCaseRecords.forEach(r => {
+    caseRecordsInRange.forEach(r => {
       if (r.consultationTopic) {
         if (!topicMap.has(r.consultationTopic)) {
           topicMap.set(r.consultationTopic, { caseCount: 0, sessionCount: 0 });
@@ -2180,7 +2213,7 @@ function DataOverviewSection({
       }
     });
 
-    filteredTimeline.forEach(r => {
+    timelineInRange.forEach(r => {
       if (r.topic) {
         if (!topicMap.has(r.topic)) {
           topicMap.set(r.topic, { caseCount: 0, sessionCount: 0 });
@@ -2200,20 +2233,39 @@ function DataOverviewSection({
       .map(([topic, data]) => ({ topic, ...data }))
       .sort((a, b) => b.caseCount - a.caseCount);
 
-    const latestByClient = new Map<string, RiskAssessment>();
-    filteredAssessments.forEach(a => {
-      const existing = latestByClient.get(a.clientCode);
-      if (!existing || existing.assessDate < a.assessDate) {
-        latestByClient.set(a.clientCode, a);
-      }
-    });
+    const latestByClientInRange = new Map<string, RiskAssessment>();
+    if (hasDateFilter) {
+      assessmentsInRange.forEach(a => {
+        const existing = latestByClientInRange.get(a.clientCode);
+        if (!existing || existing.assessDate < a.assessDate) {
+          latestByClientInRange.set(a.clientCode, a);
+        }
+      });
+    } else {
+      const latestByClientGlobal = new Map<string, RiskAssessment>();
+      assessments
+        .filter(r => filteredClientCodes.includes(r.clientCode))
+        .forEach(a => {
+          const existing = latestByClientGlobal.get(a.clientCode);
+          if (!existing || existing.assessDate < a.assessDate) {
+            latestByClientGlobal.set(a.clientCode, a);
+          }
+        });
+      assessments
+        .filter(r => filteredClientCodes.includes(r.clientCode))
+        .forEach(a => {
+          if (latestByClientGlobal.get(a.clientCode)?.id === a.id) {
+            latestByClientInRange.set(a.clientCode, a);
+          }
+        });
+    }
 
     const riskCounts: Record<RiskLevel, number> = { stable: 0, watch: 0, medium: 0, high: 0 };
-    latestByClient.forEach(a => {
+    latestByClientInRange.forEach(a => {
       riskCounts[a.level]++;
     });
 
-    const totalWithRisk = latestByClient.size;
+    const totalWithRisk = latestByClientInRange.size;
     const riskDistribution: RiskSummary[] = (["high", "medium", "watch", "stable"] as RiskLevel[]).map(level => ({
       level,
       label: riskLevelLabels[level],
@@ -2222,10 +2274,10 @@ function DataOverviewSection({
     }));
 
     const sessionCountsByClient = new Map<string, number>();
-    filteredTimeline.forEach(r => {
+    timelineInRange.forEach(r => {
       sessionCountsByClient.set(r.clientCode, (sessionCountsByClient.get(r.clientCode) || 0) + 1);
     });
-    filteredCaseRecords.forEach(r => {
+    caseRecordsInRange.forEach(r => {
       sessionCountsByClient.set(r.clientCode, (sessionCountsByClient.get(r.clientCode) || 0) + 1);
     });
 
@@ -2252,12 +2304,12 @@ function DataOverviewSection({
       percentage: totalClientsWithSessions > 0 ? Math.round((r.count / totalClientsWithSessions) * 100) : 0,
     }));
 
-    const totalGoals = filteredGoals.length;
-    const completedGoals = filteredGoals.filter(g => g.status === "completed").length;
-    const activeGoals = filteredGoals.filter(g => g.status === "active").length;
-    const pausedGoals = filteredGoals.filter(g => g.status === "paused").length;
-    const totalSteps = filteredGoals.reduce((s, g) => s + g.totalSteps, 0);
-    const completedSteps = filteredGoals.reduce((s, g) => s + g.completedSteps, 0);
+    const totalGoals = goalsInRange.length;
+    const completedGoals = goalsInRange.filter(g => g.status === "completed").length;
+    const activeGoals = goalsInRange.filter(g => g.status === "active").length;
+    const pausedGoals = goalsInRange.filter(g => g.status === "paused").length;
+    const totalSteps = goalsInRange.reduce((s, g) => s + g.totalSteps, 0);
+    const completedSteps = goalsInRange.reduce((s, g) => s + g.completedSteps, 0);
 
     const goalCompletion: GoalCompletionSummary = {
       totalGoals,
@@ -2268,15 +2320,21 @@ function DataOverviewSection({
       avgProgress: totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0,
     };
 
+    const summaryClientCodes = new Set<string>();
+    timelineInRange.forEach(r => summaryClientCodes.add(r.clientCode));
+    caseRecordsInRange.forEach(r => summaryClientCodes.add(r.clientCode));
+    assessmentsInRange.forEach(r => summaryClientCodes.add(r.clientCode));
+    goalsInRange.forEach(r => summaryClientCodes.add(r.clientCode));
+
     return {
-      totalCases: filteredClientCodes.length,
-      totalSessions: filteredTimeline.length + filteredCaseRecords.length,
+      totalCases: summaryClientCodes.size,
+      totalSessions: timelineInRange.length + caseRecordsInRange.length,
       topicDistribution,
       riskDistribution,
       sessionFrequency,
       goalCompletion,
     };
-  }, [filteredClientCodes, timeline, assessments, goals, caseRecords]);
+  }, [filteredClientCodes, timeline, assessments, goals, caseRecords, filters]);
 
   const toggleTopic = (topic: string) => {
     setFilters(prev => ({
@@ -3084,12 +3142,16 @@ function App() {
               );
             })}
           </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
+          {currentRole !== "admin" && (
+            <>
+              <h2>筛选</h2>
+              <div className="chips muted">
+                {project.filters.map((filter: string) => (
+                  <button key={filter}>{filter}</button>
+                ))}
+              </div>
+            </>
+          )}
           <h2>风险分布</h2>
           <div className="risk-distribution">
             <div className="risk-dist-item">
@@ -3156,19 +3218,21 @@ function App() {
           )}
         </aside>
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>个案档案录入</h2>
-            </div>
-            <div className="section-actions">
-              <button className="secondary-action" onClick={handleResetToSampleData}>重置示例数据</button>
-              <button className="primary-action" onClick={openNewCaseForm}>新增个案记录</button>
-            </div>
-          </div>
+        {currentRole !== "admin" ? (
+          <>
+            <section className="panel">
+              <div className="section-heading">
+                <div>
+                  <p>{project.domain}</p>
+                  <h2>个案档案录入</h2>
+                </div>
+                <div className="section-actions">
+                  <button className="secondary-action" onClick={handleResetToSampleData}>重置示例数据</button>
+                  <button className="primary-action" onClick={openNewCaseForm}>新增个案记录</button>
+                </div>
+              </div>
 
-          {isCaseFormOpen && editingCaseRecord && (
+              {isCaseFormOpen && editingCaseRecord && (
             <div className="case-form-panel">
               <div className="case-form-grid">
                 <label>
@@ -3243,88 +3307,94 @@ function App() {
             </div>
           )}
         </section>
+        </>
+      ) : (
+        <DataOverviewSection
+          timeline={timeline}
+          assessments={assessments}
+          goals={goals}
+          caseRecords={caseRecords}
+        />
+      )}
       </section>
 
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>个案档案</p>
-            <h2>近期记录</h2>
-            <p className="section-subtitle">共 {caseRecords.length} 条记录，数据已自动保存到本地浏览器</p>
-          </div>
-          <button className="secondary-action">导出摘要</button>
-        </div>
-        <div className="record-list">
-          {caseRecords.length === 0 && (
-            <p className="tl-empty">暂无个案记录，点击「新增个案记录」开始录入</p>
-          )}
-          {caseRecords
-            .slice()
-            .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))
-            .map((record, index) => (
-            <article key={record.id} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div className="record-body">
-                <div className="record-header">
-                  <h3>{record.clientCode}</h3>
-                  <span className="record-date">{record.sessionDate}</span>
-                  <span className="record-topic">{record.consultationTopic}</span>
-                </div>
-                <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
-                <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
-                {record.nextGoal && (
-                  <p className="record-next-goal"><strong>下次目标：</strong>{record.nextGoal}</p>
-                )}
-                <div className="record-actions">
-                  <button onClick={() => openEditCaseForm(record)}>编辑</button>
-                  <button className="tl-btn-danger" onClick={() => handleDeleteCaseRecord(record.id)}>删除</button>
-                </div>
+      {currentRole !== "admin" && (
+        <>
+          <section className="records panel">
+            <div className="section-heading">
+              <div>
+                <p>个案档案</p>
+                <h2>近期记录</h2>
+                <p className="section-subtitle">共 {caseRecords.length} 条记录，数据已自动保存到本地浏览器</p>
               </div>
-            </article>
-          ))}
-        </div>
-      </section>
+              <button className="secondary-action">导出摘要</button>
+            </div>
+            <div className="record-list">
+              {caseRecords.length === 0 && (
+                <p className="tl-empty">暂无个案记录，点击「新增个案记录」开始录入</p>
+              )}
+              {caseRecords
+                .slice()
+                .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))
+                .map((record, index) => (
+                <article key={record.id} className="record-card">
+                  <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
+                  <div className="record-body">
+                    <div className="record-header">
+                      <h3>{record.clientCode}</h3>
+                      <span className="record-date">{record.sessionDate}</span>
+                      <span className="record-topic">{record.consultationTopic}</span>
+                    </div>
+                    <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
+                    <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
+                    {record.nextGoal && (
+                      <p className="record-next-goal"><strong>下次目标：</strong>{record.nextGoal}</p>
+                    )}
+                    <div className="record-actions">
+                      <button onClick={() => openEditCaseForm(record)}>编辑</button>
+                      <button className="tl-btn-danger" onClick={() => handleDeleteCaseRecord(record.id)}>删除</button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
 
-      <RiskAssessmentSection
-        assessments={assessments}
-        onAddAssessment={handleAddAssessment}
-        onDeleteAssessment={handleDeleteAssessment}
-        allClientCodes={activeClientCodes}
-      />
+          <RiskAssessmentSection
+            assessments={assessments}
+            onAddAssessment={handleAddAssessment}
+            onDeleteAssessment={handleDeleteAssessment}
+            allClientCodes={activeClientCodes}
+          />
 
-      <GoalTrackingSection
-        goals={goals}
-        onAddGoal={handleAddGoal}
-        onUpdateGoal={handleUpdateGoal}
-        onDeleteGoal={handleDeleteGoal}
-        allClientCodes={activeClientCodes}
-      />
+          <GoalTrackingSection
+            goals={goals}
+            onAddGoal={handleAddGoal}
+            onUpdateGoal={handleUpdateGoal}
+            onDeleteGoal={handleDeleteGoal}
+            allClientCodes={activeClientCodes}
+          />
 
-      <TimelineSection
-        clientCodes={activeClientCodes}
-        records={timeline}
-        onAddRecord={handleAddTimeline}
-        onUpdateRecord={handleUpdateTimeline}
-        onDeleteRecord={handleDeleteTimeline}
-      />
+          <TimelineSection
+            clientCodes={activeClientCodes}
+            records={timeline}
+            onAddRecord={handleAddTimeline}
+            onUpdateRecord={handleUpdateTimeline}
+            onDeleteRecord={handleDeleteTimeline}
+          />
 
-      <SupervisionWorkbench
-        records={supervisionRecords}
-        role={currentRole}
-        onRoleChange={handleRoleChange}
-        onAddRecord={handleAddSupervisionRecord}
-        onUpdateRecord={handleUpdateSupervisionRecord}
-        onSubmitForSupervision={handleSubmitForSupervision}
-        onSaveDraft={handleSaveDraft}
-        onAddFeedback={handleAddFeedback}
-      />
-
-      <DataOverviewSection
-        timeline={timeline}
-        assessments={assessments}
-        goals={goals}
-        caseRecords={caseRecords}
-      />
+          <SupervisionWorkbench
+            records={supervisionRecords}
+            role={currentRole}
+            onRoleChange={handleRoleChange}
+            onAddRecord={handleAddSupervisionRecord}
+            onUpdateRecord={handleUpdateSupervisionRecord}
+            onSubmitForSupervision={handleSubmitForSupervision}
+            onSaveDraft={handleSaveDraft}
+            onAddFeedback={handleAddFeedback}
+          />
+        </>
+      )}
     </main>
   );
 }
