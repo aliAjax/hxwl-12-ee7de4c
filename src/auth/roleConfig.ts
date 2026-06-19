@@ -207,6 +207,7 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
     visibleFields: [],
     visibleMenus: [
       "menu.dataOverview",
+      "menu.export",
       "menu.auditLog",
     ],
     exportScopes: [

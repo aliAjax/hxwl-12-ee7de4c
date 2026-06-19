@@ -6,7 +6,6 @@ import type {
   CaseRecord,
 } from "../App";
 import {
-  generateSummary,
   summaryToText,
   copySummaryToClipboard,
   generateExportByScope,
@@ -19,10 +18,7 @@ import {
   ProtectedButton,
   PermissionGate,
   hasPermission,
-  assertPermission,
   createAuditLog,
-  type ExportScope,
-  type UserRole,
   getAllAuditLogs,
 } from "../auth";
 
@@ -43,7 +39,7 @@ export default function SessionSummaryExport({
   caseRecords,
   onToast,
 }: Props) {
-  const { currentRole, session, getExportScopes, hasPermission: roleHasPerm, assertPermission: assertPerm } = useAuth();
+  const { currentRole, session, getExportScopes, assertPermission: assertPerm } = useAuth();
   const exportScopes = getExportScopes();
 
   const [selectedClient, setSelectedClient] = useState<string>(
@@ -110,7 +106,7 @@ export default function SessionSummaryExport({
         actorRole: currentRole,
         actorName: session?.userName,
         action: "export",
-        targetType: "export_report",
+        targetType: "export_summary",
         targetId: `export_${Date.now()}`,
         targetLabel: scopeLabel,
         permissionChecked: permChecked,
@@ -257,7 +253,7 @@ export default function SessionSummaryExport({
         actorRole: currentRole,
         actorName: session?.userName,
         action: "export",
-        targetType: "export_report",
+        targetType: "export_summary",
         targetLabel: exportResult.meta.scopeLabel,
         permissionChecked: permAction,
         status: "success",
@@ -305,7 +301,7 @@ export default function SessionSummaryExport({
       actorRole: currentRole,
       actorName: session?.userName,
       action: "export",
-      targetType: "export_report",
+      targetType: "export_summary",
       targetLabel: exportResult.meta.scopeLabel,
       permissionChecked: permAction,
       status: "success",
@@ -480,16 +476,6 @@ export default function SessionSummaryExport({
               className="primary-action full-width"
               onClick={handleGenerate}
               disabled={isGenerating || availableCodes.length === 0 || (needsClientSelection && !selectedClient)}
-              auditOnClick={{
-                action: "view",
-                targetType: "export_report",
-                targetLabel: activeScope?.label,
-                details: {
-                  scopeKey: activeScope?.key,
-                  targetClientCode: needsClientSelection ? selectedClient : undefined,
-                  dateRange: { start: startDate, end: endDate },
-                },
-              }}
             >
               {isGenerating ? "生成中..." : `生成${activeScope?.label || "导出"}`}
             </ProtectedButton>

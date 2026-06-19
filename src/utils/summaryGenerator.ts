@@ -8,7 +8,7 @@ import type {
 } from "../App";
 import { desensitizeText, getMaskedItemLabel, type MaskedItemInfo } from "./desensitize";
 import type { UserRole } from "../auth/roleConfig";
-import type { AuditLog } from "../auth/auditLog";
+import type { AuditLogEntry } from "../auth/auditLog";
 
 export interface SummaryInput {
   clientCode: string;
@@ -550,7 +550,7 @@ function generateFullDataExport(
   assessments: RiskAssessment[],
   goals: InterventionGoal[],
   caseRecords: CaseRecord[],
-  auditLogs: AuditLog[],
+  auditLogs: AuditLogEntry[],
   desensitized: boolean,
   targetClientCode?: string
 ): { content: string; maskedItems: MaskedItemInfo[] } {
@@ -588,7 +588,7 @@ function generateFullDataExport(
       date: r.sessionDate,
       type: "时间线",
       topic: r.topic || r.eventType || "未分类",
-      content: `情绪：${r.emotionalState || "—"} | 干预：${r.intervention || "—"} | 备注：${r.notes || "—"}`,
+      content: `情绪：${r.emotionalState || "—"} | 干预：${r.intervention || "—"} | 下次：${r.nextGoal || "—"}`,
     })),
     ...filteredCaseRecords.map((r) => ({
       date: r.sessionDate,
@@ -617,7 +617,6 @@ function generateFullDataExport(
       lines.push(`   综合评分：${a.totalScore} 分（${riskLevelLabels[a.level]}）`);
       lines.push(`   维度得分：睡眠${a.dimensions.sleep}/情绪${a.dimensions.emotion}/自伤${a.dimensions.selfHarm}/支持${a.dimensions.support}/压力${a.dimensions.stress}`);
       if (a.summary) lines.push(`   评估摘要：${a.summary}`);
-      if (a.notes) lines.push(`   备注：${a.notes}`);
       lines.push("");
     });
   if (filteredAssessments.length === 0) lines.push("  暂无风险评估记录");
@@ -674,7 +673,7 @@ function generateFullDataExport(
       user_session: "用户会话",
       system: "系统",
       audit_log: "审计日志",
-      export_report: "导出报告",
+      export_summary: "导出报告",
     };
     const statusLabels: Record<string, string> = {
       success: "成功",
@@ -725,7 +724,7 @@ export function generateExportByScope(
     assessments: RiskAssessment[];
     goals: InterventionGoal[];
     caseRecords: CaseRecord[];
-    auditLogs?: AuditLog[];
+    auditLogs?: AuditLogEntry[];
   }
 ): ExportResult {
   const { scopeKey, scopeLabel, includes, desensitized, operatorRole, operatorName, targetClientCode, dateRange } = options;
