@@ -11,6 +11,7 @@ import {
   copySummaryToClipboard,
   type GeneratedSummary,
 } from "../utils/summaryGenerator";
+import { getMaskedItemLabel } from "../utils/desensitize";
 
 interface Props {
   clientCodes: string[];
@@ -249,12 +250,12 @@ export default function SessionSummaryExport({
           {summary.allMaskedItems.length > 0 && (
             <div className="summary-masked-list">
               <div className="summary-masked-title">
-                <span>⚠ 以下敏感信息已脱敏处理，导出文本中不会显示真实内容：</span>
+                <span>⚠ 以下敏感信息已脱敏处理，导出文本中仅显示脱敏后内容（示例）：</span>
               </div>
               <div className="summary-masked-items">
                 {summary.allMaskedItems.map((item, idx) => (
                   <span key={idx} className="summary-masked-tag">
-                    {item}
+                    {getMaskedItemLabel(item)}
                   </span>
                 ))}
               </div>

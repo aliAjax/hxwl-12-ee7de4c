@@ -6,7 +6,7 @@ import type {
   RiskLevel,
   GoalStatus,
 } from "../App";
-import { desensitizeText, type DesensitizeResult } from "./desensitize";
+import { desensitizeText, getMaskedItemLabel, type MaskedItemInfo } from "./desensitize";
 
 export interface SummaryInput {
   clientCode: string;
@@ -36,7 +36,7 @@ export interface GeneratedSummary {
     sessionCount: number;
     generationDate: string;
   };
-  allMaskedItems: string[];
+  allMaskedItems: MaskedItemInfo[];
 }
 
 const riskLevelLabels: Record<RiskLevel, string> = {
@@ -64,7 +64,7 @@ function isDateInRange(dateStr: string, start: string, end: string): boolean {
   return true;
 }
 
-function desensitizeSection(content: string): { content: string; maskedItems: string[] } {
+function desensitizeSection(content: string): { content: string; maskedItems: MaskedItemInfo[] } {
   const result = desensitizeText(content);
   return {
     content: result.text,
@@ -98,7 +98,17 @@ export function generateSummary(input: SummaryInput): GeneratedSummary {
     (r) => r.clientCode === clientCode && isDateInRange(r.sessionDate, startDate, endDate)
   ).sort((a, b) => a.sessionDate.localeCompare(b.sessionDate));
 
-  const allMaskedItems: string[] = [];
+  const allMaskedItems: MaskedItemInfo[] = [];
+  const addMaskedItems = (items: MaskedItemInfo[]) => {
+    items.forEach((item) => {
+      const exists = allMaskedItems.some(
+        (m) => m.type === item.type && m.masked === item.masked
+      );
+      if (!exists) {
+        allMaskedItems.push(item);
+      }
+    });
+  };
 
   // 基本主题
   const topicsSet = new Set<string>();
@@ -120,7 +130,7 @@ export function generateSummary(input: SummaryInput): GeneratedSummary {
     basicTopicsContent = "该时间段内无咨询主题记录。";
   }
   const basicTopicsResult = desensitizeSection(basicTopicsContent);
-  allMaskedItems.push(...basicTopicsResult.maskedItems);
+  addMaskedItems(basicTopicsResult.maskedItems);
 
   // 风险变化
   let riskContent = "";
@@ -150,7 +160,7 @@ export function generateSummary(input: SummaryInput): GeneratedSummary {
     riskContent = "该时间段内无风险评估记录。\n\n建议：如有需要，请在下次咨询时进行五维风险筛查。";
   }
   const riskResult = desensitizeSection(riskContent);
-  allMaskedItems.push(...riskResult.maskedItems);
+  addMaskedItems(riskResult.maskedItems);
 
   // 关键干预
   let interventionContent = "";
@@ -186,7 +196,7 @@ export function generateSummary(input: SummaryInput): GeneratedSummary {
     interventionContent = "该时间段内无干预方法记录。";
   }
   const interventionResult = desensitizeSection(interventionContent);
-  allMaskedItems.push(...interventionResult.maskedItems);
+  addMaskedItems(interventionResult.maskedItems);
 
   // 目标进展
   let goalContent = "";
@@ -220,7 +230,7 @@ export function generateSummary(input: SummaryInput): GeneratedSummary {
     goalContent = "该来访者暂无干预目标记录。\n\n建议：如咨询已进入稳定阶段，可考虑共同设定阶段目标。";
   }
   const goalResult = desensitizeSection(goalContent);
-  allMaskedItems.push(...goalResult.maskedItems);
+  addMaskedItems(goalResult.maskedItems);
 
   // 下次计划
   let nextPlanContent = "";
@@ -260,7 +270,7 @@ export function generateSummary(input: SummaryInput): GeneratedSummary {
     nextPlanContent = "暂无明确的后续计划记录。\n\n建议：\n1. 在下次咨询中共同确认阶段目标\n2. 根据风险等级确定跟进频率\n3. 如有自伤风险，请制定书面安全计划";
   }
   const nextPlanResult = desensitizeSection(nextPlanContent);
-  allMaskedItems.push(...nextPlanResult.maskedItems);
+  addMaskedItems(nextPlanResult.maskedItems);
 
   return {
     basicTopics: { title: "一、基本主题", content: basicTopicsResult.content },
@@ -275,7 +285,7 @@ export function generateSummary(input: SummaryInput): GeneratedSummary {
       sessionCount: filteredTimeline.length + filteredCaseRecords.length,
       generationDate: new Date().toISOString().slice(0, 10),
     },
-    allMaskedItems: Array.from(new Set(allMaskedItems)),
+    allMaskedItems,
   };
 }
 
