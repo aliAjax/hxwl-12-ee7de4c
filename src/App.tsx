@@ -35,6 +35,7 @@ import {
   type DBStatus,
   type DBEventType,
 } from "./db";
+import { generateSupervisionDraft, type GeneratedSupervisionDraft } from "./utils/summaryGenerator";
 
 const project = {
   "id": "hxwl-12",
@@ -2385,7 +2386,12 @@ function SupervisionWorkbench({
   onSubmitForSupervision,
   onSaveDraft,
   onAddFeedback,
-  crisisWarningByClient
+  crisisWarningByClient,
+  timeline,
+  assessments,
+  goals,
+  caseRecords,
+  allClientCodes,
 }: {
   records: SupervisionRecord[];
   role: UserRole;
@@ -2396,6 +2402,11 @@ function SupervisionWorkbench({
   onSaveDraft: (record: SupervisionRecord) => void;
   onAddFeedback: (recordId: string, feedback: SupervisionFeedback) => void;
   crisisWarningByClient: Map<string, CrisisWarningStatus>;
+  timeline: TimelineRecord[];
+  assessments: RiskAssessment[];
+  goals: InterventionGoal[];
+  caseRecords: CaseRecord[];
+  allClientCodes: string[];
 }) {
   const [selectedRecord, setSelectedRecord] = useState<SupervisionRecord | null>(null);
   const [statusFilter, setStatusFilter] = useState<SupervisionStatus | "all">(role === "supervisor" ? "pending" : "all");
@@ -2404,6 +2415,10 @@ function SupervisionWorkbench({
   const [isGivingFeedback, setIsGivingFeedback] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState<SupervisionFeedback | null>(null);
   const [viewingHistory, setViewingHistory] = useState(false);
+  const [draftClientCode, setDraftClientCode] = useState<string>("");
+  const [draftStartDate, setDraftStartDate] = useState<string>("");
+  const [draftEndDate, setDraftEndDate] = useState<string>("");
+  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
 
   const filteredRecords = useMemo(() => {
     let filtered = records;
@@ -2446,14 +2461,74 @@ function SupervisionWorkbench({
       updatedAt: new Date().toISOString(),
     };
     setEditingRecord(newRecord);
+    setDraftClientCode(allClientCodes[0] || "");
+    setDraftStartDate("");
+    setDraftEndDate(toLocalDateString());
     setIsEditing(true);
   };
 
   const openEditRecord = (record: SupervisionRecord) => {
     if (record.status !== "draft") return;
     setEditingRecord({ ...record });
+    setDraftClientCode(record.clientCode || allClientCodes[0] || "");
+    setDraftStartDate("");
+    setDraftEndDate(toLocalDateString());
     setIsEditing(true);
   };
+
+  const handleGenerateDraft = useCallback(() => {
+    if (!editingRecord || !draftClientCode) return;
+    setIsGeneratingDraft(true);
+    try {
+      const draft: GeneratedSupervisionDraft = generateSupervisionDraft({
+        clientCode: draftClientCode,
+        startDate: draftStartDate,
+        endDate: draftEndDate,
+        timeline,
+        assessments,
+        goals,
+        caseRecords,
+      });
+
+      const existingClips = editingRecord.sessionClips.length > 0 ? editingRecord.sessionClips : [];
+      const newClips = draft.suggestedClips.map((sc, idx) => {
+        const existingClip = existingClips[idx];
+        if (existingClip && !existingClip.transcript) {
+          return { ...existingClip, ...sc };
+        }
+        return {
+          id: "clip" + (nextClipId++ + idx),
+          timestamp: sc.timestamp,
+          description: sc.description,
+          transcript: sc.transcript,
+        };
+      }).filter((_, idx) => idx < 3);
+
+      const mergedClips = existingClips.length > 0 ? existingClips : newClips;
+
+      const topicsSet = new Set<string>();
+      [...timeline, ...caseRecords]
+        .filter(r => r.clientCode === draftClientCode)
+        .forEach(r => {
+          const t = "topic" in r ? r.topic : r.consultationTopic;
+          if (t) topicsSet.add(t);
+        });
+      const autoTopic = Array.from(topicsSet).join("、");
+
+      setEditingRecord({
+        ...editingRecord,
+        clientCode: draftClientCode,
+        consultationTopic: editingRecord.consultationTopic || autoTopic || "",
+        caseSummary: editingRecord.caseSummary || draft.caseSummary,
+        riskChanges: editingRecord.riskChanges || draft.riskChanges,
+        interventionGoals: editingRecord.interventionGoals || draft.interventionGoals,
+        sessionClips: mergedClips,
+        updatedAt: new Date().toISOString(),
+      });
+    } finally {
+      setIsGeneratingDraft(false);
+    }
+  }, [editingRecord, draftClientCode, draftStartDate, draftEndDate, timeline, assessments, goals, caseRecords]);
 
   const handleSaveDraft = () => {
     if (!editingRecord) return;
@@ -2607,6 +2682,50 @@ function SupervisionWorkbench({
         </div>
 
         <div className="sup-edit-form">
+          <div className="sup-draft-generator">
+            <h3 className="sup-section-title">📝 从个案数据生成草稿</h3>
+            <p className="sup-draft-hint">选择来访者和时间范围，系统将自动汇总个案记录、风险评估、目标进展和会谈片段到草稿中。生成后仍可自由编辑。</p>
+            <div className="tl-form-grid">
+              <label>
+                <span>选择来访者 *</span>
+                <select
+                  value={draftClientCode}
+                  onChange={e => setDraftClientCode(e.target.value)}
+                >
+                  <option value="">请选择来访者</option>
+                  {allClientCodes.map(code => (
+                    <option key={code} value={code}>{code}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>起始日期</span>
+                <input
+                  type="date"
+                  value={draftStartDate}
+                  onChange={e => setDraftStartDate(e.target.value)}
+                />
+              </label>
+              <label>
+                <span>结束日期</span>
+                <input
+                  type="date"
+                  value={draftEndDate}
+                  onChange={e => setDraftEndDate(e.target.value)}
+                />
+              </label>
+              <div className="sup-draft-action">
+                <button
+                  className="primary-action draft-generate-btn"
+                  onClick={handleGenerateDraft}
+                  disabled={!draftClientCode || isGeneratingDraft}
+                >
+                  {isGeneratingDraft ? "生成中..." : "✨ 自动生成草稿"}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="tl-form-grid">
             <label>
               <span>来访者代号 *</span>
@@ -2841,8 +2960,12 @@ function SupervisionWorkbench({
             {role === "counselor" && selectedRecord.status === "draft" && (
               <button className="primary-action" onClick={() => openEditRecord(selectedRecord)}>编辑</button>
             )}
-            {role === "supervisor" && selectedRecord.status === "pending" && (
-              <button className="primary-action" onClick={() => openFeedbackForm(selectedRecord)}>给出督导意见</button>
+            {role === "supervisor" && (
+              selectedRecord.status === "pending" ? (
+                <button className="primary-action" onClick={() => openFeedbackForm(selectedRecord)}>给出督导意见</button>
+              ) : selectedRecord.status === "feedback" ? (
+                <button className="primary-action" onClick={() => openFeedbackForm(selectedRecord)}>追加督导意见</button>
+              ) : null
             )}
           </div>
         </div>
@@ -5661,6 +5784,11 @@ function App() {
                     onSaveDraft={handleSaveDraft}
                     onAddFeedback={handleAddFeedback}
                     crisisWarningByClient={crisisWarningStats.byClient}
+                    timeline={timeline}
+                    assessments={assessments}
+                    goals={goals}
+                    caseRecords={caseRecords}
+                    allClientCodes={activeClientCodes}
                   />
                 </ProtectedMenu>
               )}

@@ -41,6 +41,36 @@ export interface GeneratedSummary {
   allMaskedItems: MaskedItemInfo[];
 }
 
+export interface SupervisionDraftInput {
+  clientCode: string;
+  startDate: string;
+  endDate: string;
+  timeline: TimelineRecord[];
+  assessments: RiskAssessment[];
+  goals: InterventionGoal[];
+  caseRecords: CaseRecord[];
+}
+
+export interface GeneratedSupervisionDraft {
+  caseSummary: string;
+  riskChanges: string;
+  interventionGoals: string;
+  suggestedClips: Array<{
+    timestamp: string;
+    description: string;
+    transcript: string;
+  }>;
+  meta: {
+    clientCode: string;
+    startDate: string;
+    endDate: string;
+    sessionCount: number;
+    assessmentCount: number;
+    goalCount: number;
+    generationDate: string;
+  };
+}
+
 const riskLevelLabels: Record<RiskLevel, string> = {
   stable: "稳定",
   watch: "关注",
@@ -871,5 +901,161 @@ export function generateExportByScope(
       dateRange: { start: startDate || dateRange?.start, end: endDate || dateRange?.end },
     },
     allMaskedItems: finalMaskedItems,
+  };
+}
+
+export function generateSupervisionDraft(input: SupervisionDraftInput): GeneratedSupervisionDraft {
+  const { clientCode, startDate, endDate, timeline, assessments, goals, caseRecords } = input;
+
+  const filteredTimeline = timeline
+    .filter(r => r.clientCode === clientCode && isDateInRange(r.sessionDate, startDate, endDate))
+    .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate));
+
+  const filteredAssessments = assessments
+    .filter(a => a.clientCode === clientCode && isDateInRange(a.assessDate, startDate, endDate))
+    .sort((a, b) => a.assessDate.localeCompare(b.assessDate));
+
+  const filteredGoals = goals.filter(g => g.clientCode === clientCode);
+
+  const filteredCaseRecords = caseRecords
+    .filter(r => r.clientCode === clientCode && isDateInRange(r.sessionDate, startDate, endDate))
+    .sort((a, b) => a.sessionDate.localeCompare(b.sessionDate));
+
+  const sessionCount = filteredTimeline.length + filteredCaseRecords.length;
+  const allSessions = [
+    ...filteredTimeline.map(r => ({
+      date: r.sessionDate,
+      type: "时间线",
+      topic: r.topic || "",
+      emotionalState: r.emotionalState || "",
+      intervention: r.intervention || "",
+      nextGoal: r.nextGoal || "",
+      mainConcern: "",
+    })),
+    ...filteredCaseRecords.map(r => ({
+      date: r.sessionDate,
+      type: "个案档案",
+      topic: r.consultationTopic || "",
+      emotionalState: r.emotionalState || "",
+      intervention: r.intervention || "",
+      nextGoal: r.nextGoal || "",
+      mainConcern: r.mainConcern || "",
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+
+  const topicsSet = new Set<string>();
+  allSessions.forEach(s => s.topic && topicsSet.add(s.topic));
+  const consultationTopic = allSessions.length > 0 ? (allSessions[allSessions.length - 1].topic || "") : "";
+
+  let caseSummary = "";
+  caseSummary += `来访者${clientCode}，咨询主题：${Array.from(topicsSet).join("、") || "待补充"}。\n\n`;
+  caseSummary += `时间范围：${startDate || "不限"} 至 ${endDate || "至今"}，共 ${sessionCount} 次会谈记录。\n\n`;
+
+  if (allSessions.length > 0) {
+    caseSummary += "会谈概要：\n";
+    allSessions.forEach((s, idx) => {
+      caseSummary += `${idx + 1}. [${s.date}] ${s.topic}\n`;
+      if (s.mainConcern) caseSummary += `   主要困扰：${s.mainConcern}\n`;
+      if (s.emotionalState) caseSummary += `   情绪状态：${s.emotionalState}\n`;
+      if (s.intervention) caseSummary += `   干预方法：${s.intervention}\n`;
+      caseSummary += "\n";
+    });
+  } else {
+    caseSummary += "该时间段内暂不会谈记录。\n";
+  }
+
+  let riskChanges = "";
+  if (filteredAssessments.length > 0) {
+    riskChanges += `共 ${filteredAssessments.length} 次风险评估：\n\n`;
+    filteredAssessments.forEach((a, idx) => {
+      riskChanges += `${idx + 1}. [${a.assessDate}] 综合评分 ${a.totalScore}/20（${riskLevelLabels[a.level]}）\n`;
+      const dimLabels: Record<keyof RiskDimensions, string> = {
+        sleep: "睡眠", emotion: "情绪", selfHarm: "自伤", support: "支持", stress: "压力"
+      };
+      const dims = (Object.keys(dimLabels) as (keyof RiskDimensions)[]).map(k => `${dimLabels[k]}${a.dimensions[k]}`).join(" / ");
+      riskChanges += `   维度：${dims}\n`;
+      if (a.summary) riskChanges += `   摘要：${a.summary}\n`;
+      riskChanges += "\n";
+    });
+
+    if (filteredAssessments.length >= 2) {
+      const first = filteredAssessments[0];
+      const last = filteredAssessments[filteredAssessments.length - 1];
+      const scoreDiff = last.totalScore - first.totalScore;
+      const trend = scoreDiff < 0 ? "下降" : scoreDiff > 0 ? "上升" : "持平";
+      riskChanges += `风险趋势：首评${first.totalScore}分 → 末评${last.totalScore}分，整体${trend}`;
+      if (first.level !== last.level) {
+        riskChanges += `（${riskLevelLabels[first.level]} → ${riskLevelLabels[last.level]}）`;
+      }
+      riskChanges += "\n";
+    }
+  } else {
+    riskChanges = "该时间段内暂无风险评估记录。建议：如有需要，请在下次咨询时进行五维风险筛查。\n";
+  }
+
+  let interventionGoals = "";
+  if (filteredGoals.length > 0) {
+    const activeCount = filteredGoals.filter(g => g.status === "active").length;
+    const completedCount = filteredGoals.filter(g => g.status === "completed").length;
+    const pausedCount = filteredGoals.filter(g => g.status === "paused").length;
+    interventionGoals += `目标总数：${filteredGoals.length} 个（进行中${activeCount} / 已完成${completedCount} / 已暂停${pausedCount}）\n\n`;
+
+    filteredGoals.forEach((g, idx) => {
+      const progress = g.totalSteps > 0 ? Math.round((g.completedSteps / g.totalSteps) * 100) : 0;
+      interventionGoals += `${idx + 1}. ${g.goalTitle} [${goalStatusLabels[g.status]}]\n`;
+      interventionGoals += `   进度：${g.completedSteps}/${g.totalSteps}（${progress}%）\n`;
+      if (g.description) interventionGoals += `   描述：${g.description}\n`;
+      if (g.lastAction) interventionGoals += `   最近行动：${g.lastAction}（${g.lastActionDate || "日期未记录"}）\n`;
+      if (g.nextPractice && g.status === "active") {
+        interventionGoals += `   下次练习：${g.nextPractice}（${g.nextPracticeDate || "日期未安排"}）\n`;
+      }
+      interventionGoals += "\n";
+    });
+
+    const totalSteps = filteredGoals.reduce((s, g) => s + g.totalSteps, 0);
+    const completedSteps = filteredGoals.reduce((s, g) => s + g.completedSteps, 0);
+    const overallProgress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+    interventionGoals += `总体进度：${completedSteps}/${totalSteps} 步骤完成，综合进度 ${overallProgress}%`;
+  } else {
+    interventionGoals = "该来访者暂无干预目标记录。建议：如咨询已进入稳定阶段，可考虑共同设定阶段目标。\n";
+  }
+
+  const suggestedClips: GeneratedSupervisionDraft["suggestedClips"] = [];
+  if (allSessions.length > 0) {
+    const withConcern = allSessions.filter(s => s.mainConcern || s.intervention);
+    const clipsToSuggest = withConcern.slice(0, 3);
+    clipsToSuggest.forEach((s, idx) => {
+      let transcript = "";
+      if (s.mainConcern) {
+        transcript += `来访者：${s.mainConcern}\n`;
+      }
+      if (s.intervention) {
+        transcript += `咨询师：采用${s.intervention}进行干预。\n`;
+      }
+      if (s.nextGoal) {
+        transcript += `咨询师：建议后续练习方向：${s.nextGoal}`;
+      }
+      suggestedClips.push({
+        timestamp: `第${idx + 1}次会谈 ${s.date}`,
+        description: `${s.emotionalState ? "情绪状态：" + s.emotionalState + " - " : ""}${s.topic || "会谈记录"}`,
+        transcript: transcript.trim() || `会谈日期：${s.date}\n请在此处粘贴或录入该次会谈的关键对话片段。`,
+      });
+    });
+  }
+
+  return {
+    caseSummary: caseSummary.trim(),
+    riskChanges: riskChanges.trim(),
+    interventionGoals: interventionGoals.trim(),
+    suggestedClips,
+    meta: {
+      clientCode,
+      startDate,
+      endDate,
+      sessionCount,
+      assessmentCount: filteredAssessments.length,
+      goalCount: filteredGoals.length,
+      generationDate: new Date().toISOString().slice(0, 10),
+    },
   };
 }

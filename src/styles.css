@@ -1793,6 +1793,42 @@ input {
   box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
 }
 
+.sup-draft-generator {
+  background: linear-gradient(135deg, #f5f3ff 0%, #ecfeff 100%);
+  border: 2px solid #c4b5fd;
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 8px;
+}
+
+.sup-draft-generator .sup-section-title {
+  margin-bottom: 6px;
+  color: #6d28d9;
+}
+
+.sup-draft-hint {
+  margin: 0 0 14px 0;
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.6;
+}
+
+.sup-draft-action {
+  display: flex;
+  align-items: flex-end;
+}
+
+.draft-generate-btn {
+  width: 100%;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.draft-generate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .secondary-btn {
   background: #f1f5f9;
   color: #475569;
