@@ -3692,31 +3692,28 @@ function App() {
       currentRiskLevel,
       [savedRecord.mainConcern, savedRecord.intervention, savedRecord.nextGoal]
     );
-    if (trigger) {
-      setCrisisWarnings(prev => {
-        if (isDuplicateWarning(prev, savedRecord.clientCode, Date.now())) return prev;
-        const warningNow = new Date().toISOString();
-        const warning: CrisisWarning = {
-          id: "cw" + nextCrisisWarningId++,
-          clientCode: savedRecord.clientCode,
-          triggerType: "case_record",
-          triggerId: savedRecord.id,
-          triggerReason: reasons.join("；"),
-          status: "pending",
-          createdAt: warningNow,
-          updatedAt: warningNow,
-          actions: [],
-        };
-        persistCrisisWarning(warning);
-        persistCounters();
-        showToast(`已自动创建危机预警：${savedRecord.clientCode}`, "info");
-        return [...prev, warning];
-      });
+    if (trigger && !isDuplicateWarning(crisisWarnings, savedRecord.clientCode, Date.now())) {
+      const warningNow = new Date().toISOString();
+      const warning: CrisisWarning = {
+        id: "cw" + nextCrisisWarningId++,
+        clientCode: savedRecord.clientCode,
+        triggerType: "case_record",
+        triggerId: savedRecord.id,
+        triggerReason: reasons.join("；"),
+        status: "pending",
+        createdAt: warningNow,
+        updatedAt: warningNow,
+        actions: [],
+      };
+      setCrisisWarnings(prev => [...prev, warning]);
+      persistCrisisWarning(warning);
+      persistCounters();
+      showToast(`已自动创建危机预警：${savedRecord.clientCode}`, "info");
     }
     setIsCaseFormOpen(false);
     setEditingCaseRecord(null);
     showToast("个案记录已保存", "success");
-  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit, persistCrisisWarning, assessments]);
+  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit, persistCrisisWarning, assessments, crisisWarnings]);
 
   const handleDeleteCaseRecord = useCallback((id: string) => {
     try {
@@ -3835,28 +3832,25 @@ function App() {
       message: "风险评估已创建",
     });
     const { trigger, reasons } = shouldTriggerCrisisWarning(a.level, [a.summary]);
-    if (trigger) {
-      setCrisisWarnings(prev => {
-        if (isDuplicateWarning(prev, a.clientCode, Date.now())) return prev;
-        const now = new Date().toISOString();
-        const warning: CrisisWarning = {
-          id: "cw" + nextCrisisWarningId++,
-          clientCode: a.clientCode,
-          triggerType: "risk_assessment",
-          triggerId: a.id,
-          triggerReason: reasons.join("；"),
-          status: "pending",
-          createdAt: now,
-          updatedAt: now,
-          actions: [],
-        };
-        persistCrisisWarning(warning);
-        persistCounters();
-        showToast(`已自动创建危机预警：${a.clientCode}`, "info");
-        return [...prev, warning];
-      });
+    if (trigger && !isDuplicateWarning(crisisWarnings, a.clientCode, Date.now())) {
+      const now = new Date().toISOString();
+      const warning: CrisisWarning = {
+        id: "cw" + nextCrisisWarningId++,
+        clientCode: a.clientCode,
+        triggerType: "risk_assessment",
+        triggerId: a.id,
+        triggerReason: reasons.join("；"),
+        status: "pending",
+        createdAt: now,
+        updatedAt: now,
+        actions: [],
+      };
+      setCrisisWarnings(prev => [...prev, warning]);
+      persistCrisisWarning(warning);
+      persistCounters();
+      showToast(`已自动创建危机预警：${a.clientCode}`, "info");
     }
-  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit, persistCrisisWarning]);
+  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit, persistCrisisWarning, crisisWarnings]);
 
   const handleDeleteAssessment = useCallback((id: string) => {
     try {
