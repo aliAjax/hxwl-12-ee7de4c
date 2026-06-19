@@ -26,7 +26,13 @@ export type PermissionAction =
   | "data.overview"
   | "audit.view"
   | "audit.delete"
-  | "system.reset";
+  | "system.reset"
+  | "crisis.view"
+  | "crisis.confirm"
+  | "crisis.escalate"
+  | "crisis.refer"
+  | "crisis.close"
+  | "crisis.delete";
 
 export type FieldKey =
   | "case.clientCode"
@@ -50,7 +56,8 @@ export type MenuKey =
   | "menu.supervision"
   | "menu.export"
   | "menu.dataOverview"
-  | "menu.auditLog";
+  | "menu.auditLog"
+  | "menu.crisisWarning";
 
 export interface RoleConfig {
   label: string;
@@ -98,6 +105,9 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
       "supervision.submit",
       "export.summary",
       "audit.view",
+      "crisis.view",
+      "crisis.confirm",
+      "crisis.close",
     ],
     visibleFields: [
       "case.clientCode",
@@ -120,6 +130,7 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
       "menu.goalTracking",
       "menu.supervision",
       "menu.export",
+      "menu.crisisWarning",
     ],
     exportScopes: [
       {
@@ -146,6 +157,11 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
       "export.summary",
       "export.full",
       "audit.view",
+      "crisis.view",
+      "crisis.confirm",
+      "crisis.escalate",
+      "crisis.refer",
+      "crisis.close",
     ],
     visibleFields: [
       "case.clientCode",
@@ -169,6 +185,7 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
       "menu.supervision",
       "menu.export",
       "menu.auditLog",
+      "menu.crisisWarning",
     ],
     exportScopes: [
       {
@@ -203,6 +220,12 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
       "audit.view",
       "audit.delete",
       "system.reset",
+      "crisis.view",
+      "crisis.confirm",
+      "crisis.escalate",
+      "crisis.refer",
+      "crisis.close",
+      "crisis.delete",
     ],
     visibleFields: [],
     visibleMenus: [
