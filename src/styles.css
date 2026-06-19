@@ -824,6 +824,40 @@ input {
   border: 1px solid #e2e8f0;
 }
 
+.risk-explanation {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #eef2ff 100%);
+  border-radius: 8px;
+  border: 1px solid #c7d2fe;
+}
+
+.risk-explanation-icon {
+  flex-shrink: 0;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.risk-explanation-text {
+  margin: 0;
+  font-size: 13px;
+  color: #3b4c6b;
+  line-height: 1.7;
+}
+
+.risk-date-tag {
+  font-size: 11px;
+  color: #94a3b8;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 2px;
+  white-space: nowrap;
+}
+
 .goal-summary-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

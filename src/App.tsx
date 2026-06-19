@@ -144,6 +144,7 @@ export interface RiskAssessment {
   totalScore: number;
   level: RiskLevel;
   summary: string;
+  explanation?: string;
 }
 
 export type CrisisWarningStatus = "pending" | "confirmed" | "escalated" | "referred" | "closed";
@@ -729,6 +730,60 @@ function calculateRisk(dimensions: RiskDimensions): { level: RiskLevel; score: n
   return { level, score };
 }
 
+function generateRiskExplanation(
+  dimensions: RiskDimensions,
+  level: RiskLevel,
+  score: number,
+  previousAssessment: RiskAssessment | null
+): string {
+  const lines: string[] = [];
+
+  const dimEntries = (Object.keys(dimensionOptions) as (keyof RiskDimensions)[]).map(key => {
+    const label = dimensionOptions[key].label;
+    const val = dimensions[key];
+    const descriptor = val >= 3 ? "偏高" : val === 2 ? "一般" : "良好";
+    return `${label}${descriptor}(${val}分)`;
+  });
+  lines.push(`五维度分值：${dimEntries.join("、")}，总分${score}/20（${riskLevelLabels[level]}）。`);
+
+  if (previousAssessment) {
+    const prevScore = previousAssessment.totalScore;
+    const diff = score - prevScore;
+    let trend: string;
+    if (diff > 0) {
+      trend = `↑ 较上次（${prevScore}分）上升${diff}分，风险升高`;
+    } else if (diff < 0) {
+      trend = `↓ 较上次（${prevScore}分）下降${Math.abs(diff)}分，风险降低`;
+    } else {
+      trend = `→ 较上次（${prevScore}分）持平，风险未变`;
+    }
+    const prevLevelLabel = riskLevelLabels[previousAssessment.level];
+    const currLevelLabel = riskLevelLabels[level];
+    if (previousAssessment.level !== level) {
+      trend += `，等级由「${prevLevelLabel}」变为「${currLevelLabel}」`;
+    }
+    lines.push(trend + "。");
+
+    const dimKeys = Object.keys(dimensionOptions) as (keyof RiskDimensions)[];
+    const bigChanges = dimKeys.filter(key => {
+      const delta = dimensions[key] - previousAssessment.dimensions[key];
+      return Math.abs(delta) >= 2;
+    });
+    if (bigChanges.length > 0) {
+      const changeDesc = bigChanges.map(key => {
+        const delta = dimensions[key] - previousAssessment.dimensions[key];
+        const dir = delta > 0 ? "升高" : "降低";
+        return `${dimensionOptions[key].label}${dir}${Math.abs(delta)}分`;
+      });
+      lines.push(`显著变化维度：${changeDesc.join("、")}。`);
+    }
+  } else {
+    lines.push("本次为该来访者首次评估，暂无历史对比数据。");
+  }
+
+  return lines.join("");
+}
+
 let nextTimelineId = 7;
 let nextRiskId = 4;
 
@@ -971,6 +1026,10 @@ function RiskAssessmentSection({
 
   const handleSave = () => {
     const { level, score } = preview;
+    const prevForClient = assessments
+      .filter(a => a.clientCode === selectedClient)
+      .sort((a, b) => b.assessDate.localeCompare(a.assessDate))[0] ?? null;
+    const explanation = generateRiskExplanation(formData, level, score, prevForClient);
     const assessment: RiskAssessment = {
       id: "ra" + nextRiskId++,
       clientCode: selectedClient,
@@ -978,7 +1037,8 @@ function RiskAssessmentSection({
       dimensions: { ...formData },
       totalScore: score,
       level,
-      summary: summary.trim() || generateAutoSummary(formData, level, score)
+      summary: summary.trim() || generateAutoSummary(formData, level, score),
+      explanation
     };
     onAddAssessment(assessment);
     setIsFormOpen(false);
@@ -1125,6 +1185,12 @@ function RiskAssessmentSection({
               ))}
             </div>
             <p className="risk-summary-text">{assess.summary}</p>
+            {assess.explanation && (
+              <div className="risk-explanation">
+                <span className="risk-explanation-icon">💡</span>
+                <p className="risk-explanation-text">{assess.explanation}</p>
+              </div>
+            )}
             <div className="risk-reminder-list compact">
               <div className="risk-reminder-label">跟进提醒</div>
               <ul>
@@ -4942,9 +5008,12 @@ function App() {
                               <span className="record-date">{record.sessionDate}</span>
                               <span className="record-topic">{record.consultationTopic}</span>
                               {riskInfo && (
-                                <span className={`risk-badge-inline ${riskLevelColors[riskInfo.level]}`}>
-                                  {riskLevelLabels[riskInfo.level]}
-                                </span>
+                                <>
+                                  <span className={`risk-badge-inline ${riskLevelColors[riskInfo.level]}`}>
+                                    {riskLevelLabels[riskInfo.level]}
+                                  </span>
+                                  <span className="risk-date-tag">评估于 {riskInfo.assessDate}</span>
+                                </>
                               )}
                               {crisisWarningStats.byClient.has(record.clientCode) && (
                                 <span className="cw-indicator-badge">
