@@ -104,7 +104,12 @@ const NAME_SUFFIXES = [
 
 const CONTEXT_VERBS = [
   "说", "告诉", "表示", "觉得", "认为", "想", "问", "回答",
-  "提到", "指出", "强调", "建议",
+  "提到", "指出", "强调", "建议", "知道",
+].sort((a, b) => b.length - a.length);
+
+const NAME_FOLLOWERS = [
+  "的", "和", "与", "跟", "对", "向", "让", "叫", "是", "说", "找",
+  "知道", "联系", "沟通", "支持", "帮助",
 ].sort((a, b) => b.length - a.length);
 
 const SURNAME_SET = new Set([
@@ -269,6 +274,26 @@ export function desensitizeText(text: string): DesensitizeResult {
                   addMaskedItem("possibleName", masked);
                   outputParts.push(masked + verb);
                   runProcessed = candidateEnd + verb.length;
+                  nameFound = true;
+                  break;
+                }
+              }
+            }
+            if (nameFound) break;
+          }
+          if (nameFound) continue;
+
+          for (const follower of NAME_FOLLOWERS) {
+            for (let nameLen = 2; nameLen <= 3; nameLen++) {
+              const candidateEnd = runProcessed + nameLen;
+              if (candidateEnd + follower.length > run.length) break;
+              if (run.slice(candidateEnd, candidateEnd + follower.length) === follower) {
+                const candidate = run.slice(runProcessed, candidateEnd);
+                if (isChineseNameCandidate(candidate)) {
+                  const masked = maskName(candidate);
+                  addMaskedItem("possibleName", masked);
+                  outputParts.push(masked + follower);
+                  runProcessed = candidateEnd + follower.length;
                   nameFound = true;
                   break;
                 }
