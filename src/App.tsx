@@ -75,6 +75,23 @@ interface TimelineRecord {
 
 type RiskLevel = "stable" | "watch" | "medium" | "high";
 
+type GoalStatus = "active" | "paused" | "completed";
+
+interface InterventionGoal {
+  id: string;
+  clientCode: string;
+  goalTitle: string;
+  description: string;
+  status: GoalStatus;
+  totalSteps: number;
+  completedSteps: number;
+  lastAction: string;
+  lastActionDate: string;
+  nextPractice: string;
+  nextPracticeDate: string;
+  createdAt: string;
+}
+
 interface RiskDimensions {
   sleep: number;
   emotion: number;
@@ -131,6 +148,107 @@ const initialRiskAssessments: RiskAssessment[] = [
     summary: "整体状态平稳，压力可控，继续常规跟进"
   }
 ];
+
+const goalStatusLabels: Record<GoalStatus, string> = {
+  active: "进行中",
+  paused: "已暂停",
+  completed: "已完成"
+};
+
+const goalStatusColors: Record<GoalStatus, string> = {
+  active: "goal-active",
+  paused: "goal-paused",
+  completed: "goal-completed"
+};
+
+const initialGoals: InterventionGoal[] = [
+  {
+    id: "g1",
+    clientCode: "C-042",
+    goalTitle: "焦虑触发场景觉察",
+    description: "学会识别和记录日常焦虑触发场景，建立自我觉察习惯",
+    status: "active",
+    totalSteps: 5,
+    completedSteps: 2,
+    lastAction: "完成呼吸放松练习，记录3个焦虑场景",
+    lastActionDate: "2026-06-10",
+    nextPractice: "每日焦虑场景记录表填写",
+    nextPracticeDate: "2026-06-17",
+    createdAt: "2026-05-20"
+  },
+  {
+    id: "g2",
+    clientCode: "C-042",
+    goalTitle: "认知重构能力建立",
+    description: "掌握认知歪曲识别方法，能对自动化思维进行合理反驳",
+    status: "active",
+    totalSteps: 6,
+    completedSteps: 1,
+    lastAction: "学习识别灾难化思维模式",
+    lastActionDate: "2026-06-03",
+    nextPractice: "完成思维记录表中的反驳栏填写",
+    nextPracticeDate: "2026-06-17",
+    createdAt: "2026-06-03"
+  },
+  {
+    id: "g3",
+    clientCode: "C-119",
+    goalTitle: "非暴力沟通表达",
+    description: "学会用观察-感受-需要-请求框架表达自身需求",
+    status: "active",
+    totalSteps: 4,
+    completedSteps: 2,
+    lastAction: "在会谈中角色扮演表达感受",
+    lastActionDate: "2026-06-09",
+    nextPractice: "与伴侣尝试一次非暴力沟通对话",
+    nextPracticeDate: "2026-06-16",
+    createdAt: "2026-05-26"
+  },
+  {
+    id: "g4",
+    clientCode: "C-119",
+    goalTitle: "回避模式识别",
+    description: "识别亲密关系中的回避防御机制及触发条件",
+    status: "completed",
+    totalSteps: 3,
+    completedSteps: 3,
+    lastAction: "梳理出3个典型回避场景及背后需求",
+    lastActionDate: "2026-06-02",
+    nextPractice: "",
+    nextPracticeDate: "",
+    createdAt: "2026-05-12"
+  },
+  {
+    id: "g5",
+    clientCode: "C-203",
+    goalTitle: "工作时间边界设定",
+    description: "建立明确的工作与生活边界，减少过度加班",
+    status: "active",
+    totalSteps: 4,
+    completedSteps: 1,
+    lastAction: "梳理当前工作中的压力源与边界缺失点",
+    lastActionDate: "2026-06-11",
+    nextPractice: "本周试行准时下班一天并记录感受",
+    nextPracticeDate: "2026-06-18",
+    createdAt: "2026-05-28"
+  },
+  {
+    id: "g6",
+    clientCode: "C-203",
+    goalTitle: "压力源清单整理",
+    description: "系统梳理工作与生活中的压力源并分级",
+    status: "paused",
+    totalSteps: 3,
+    completedSteps: 1,
+    lastAction: "初步列出5项主要压力源",
+    lastActionDate: "2026-05-28",
+    nextPractice: "对压力源进行可控性分类",
+    nextPracticeDate: "",
+    createdAt: "2026-05-15"
+  }
+];
+
+let nextGoalId = 7;
 
 const emotionalOptions = ["平静", "低落", "焦虑", "紧张不安", "恐惧加剧", "回避防御", "低落委屈", "疲惫烦躁", "焦虑无助", "愤怒", "麻木"];
 
@@ -639,8 +757,333 @@ function RiskAssessmentSection({
   );
 }
 
+function GoalTrackingSection({
+  goals,
+  onAddGoal,
+  onUpdateGoal,
+  onDeleteGoal,
+  allClientCodes
+}: {
+  goals: InterventionGoal[];
+  onAddGoal: (g: InterventionGoal) => void;
+  onUpdateGoal: (g: InterventionGoal) => void;
+  onDeleteGoal: (id: string) => void;
+  allClientCodes: string[];
+}) {
+  const [selectedClient, setSelectedClient] = useState<string>(allClientCodes[0] || "C-042");
+  const [statusFilter, setStatusFilter] = useState<GoalStatus | "all">("all");
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingGoal, setEditingGoal] = useState<InterventionGoal | null>(null);
+
+  const availableCodes = Array.from(new Set([...allClientCodes, ...goals.map(g => g.clientCode)])).sort();
+
+  const filteredGoals = goals
+    .filter(g => g.clientCode === selectedClient)
+    .filter(g => statusFilter === "all" || g.status === statusFilter)
+    .sort((a, b) => {
+      const statusOrder: Record<GoalStatus, number> = { active: 0, paused: 1, completed: 2 };
+      if (statusOrder[a.status] !== statusOrder[b.status]) return statusOrder[a.status] - statusOrder[b.status];
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+
+  const statusCounts = useMemo(() => {
+    const clientGoals = goals.filter(g => g.clientCode === selectedClient);
+    return {
+      all: clientGoals.length,
+      active: clientGoals.filter(g => g.status === "active").length,
+      paused: clientGoals.filter(g => g.status === "paused").length,
+      completed: clientGoals.filter(g => g.status === "completed").length,
+    };
+  }, [goals, selectedClient]);
+
+  const progressSummary = useMemo(() => {
+    const clientGoals = goals.filter(g => g.clientCode === selectedClient && g.status === "active");
+    if (clientGoals.length === 0) return { avgProgress: 0, totalActive: 0, totalSteps: 0, completedSteps: 0 };
+    const totalSteps = clientGoals.reduce((s, g) => s + g.totalSteps, 0);
+    const completedSteps = clientGoals.reduce((s, g) => s + g.completedSteps, 0);
+    return {
+      avgProgress: totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0,
+      totalActive: clientGoals.length,
+      totalSteps,
+      completedSteps,
+    };
+  }, [goals, selectedClient]);
+
+  const openNewForm = () => {
+    setEditingGoal({
+      id: "",
+      clientCode: selectedClient,
+      goalTitle: "",
+      description: "",
+      status: "active",
+      totalSteps: 4,
+      completedSteps: 0,
+      lastAction: "",
+      lastActionDate: new Date().toISOString().slice(0, 10),
+      nextPractice: "",
+      nextPracticeDate: "",
+      createdAt: new Date().toISOString().slice(0, 10),
+    });
+    setIsFormOpen(true);
+  };
+
+  const openEditForm = (goal: InterventionGoal) => {
+    setEditingGoal({ ...goal });
+    setIsFormOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!editingGoal) return;
+    if (!editingGoal.goalTitle) return;
+    let totalSteps = editingGoal.totalSteps < 1 ? 1 : editingGoal.totalSteps;
+    let completedSteps = Math.min(editingGoal.completedSteps, totalSteps);
+    let status: GoalStatus = completedSteps >= totalSteps ? "completed" : editingGoal.status;
+    const finalGoal: InterventionGoal = {
+      ...editingGoal,
+      totalSteps,
+      completedSteps,
+      status,
+    };
+    if (finalGoal.id) {
+      onUpdateGoal(finalGoal);
+    } else {
+      onAddGoal({ ...finalGoal, id: "g" + nextGoalId++ });
+    }
+    setIsFormOpen(false);
+    setEditingGoal(null);
+  };
+
+  const handleCancel = () => {
+    setIsFormOpen(false);
+    setEditingGoal(null);
+  };
+
+  const updateField = <K extends keyof InterventionGoal>(field: K, value: InterventionGoal[K]) => {
+    if (!editingGoal) return;
+    setEditingGoal({ ...editingGoal, [field]: value });
+  };
+
+  const handleStepChange = (field: "totalSteps" | "completedSteps", raw: string) => {
+    const minVal = field === "totalSteps" ? 1 : 0;
+    const val = Math.max(minVal, Math.min(99, parseInt(raw) || minVal));
+    if (!editingGoal) return;
+    const updated = { ...editingGoal, [field]: val };
+    if (field === "totalSteps" && updated.completedSteps > val) {
+      updated.completedSteps = val;
+    }
+    if (field === "completedSteps" && val >= updated.totalSteps) {
+      updated.status = "completed";
+    }
+    setEditingGoal(updated);
+  };
+
+  const renderProgressBar = (completed: number, total: number) => {
+    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+    return (
+      <div className="goal-progress-bar">
+        <div className="goal-progress-fill" style={{ width: `${pct}%` }} />
+        <span className="goal-progress-text">{completed}/{total} · {pct}%</span>
+      </div>
+    );
+  };
+
+  return (
+    <section className="records panel">
+      <div className="section-heading">
+        <div>
+          <p>干预目标追踪</p>
+          <h2>阶段目标与进度管理</h2>
+        </div>
+        <button className="primary-action" onClick={openNewForm}>新增目标</button>
+      </div>
+
+      <div className="tl-client-tabs">
+        {availableCodes.map(code => (
+          <button
+            key={code}
+            className={code === selectedClient ? "tl-tab active" : "tl-tab"}
+            onClick={() => setSelectedClient(code)}
+          >
+            {code}
+          </button>
+        ))}
+      </div>
+
+      <div className="goal-summary-row">
+        <div className="goal-summary-card">
+          <span className="goal-summary-label">活跃目标</span>
+          <strong className="goal-summary-value">{progressSummary.totalActive}</strong>
+        </div>
+        <div className="goal-summary-card">
+          <span className="goal-summary-label">总体进度</span>
+          <strong className="goal-summary-value">{progressSummary.avgProgress}%</strong>
+        </div>
+        <div className="goal-summary-card">
+          <span className="goal-summary-label">已完成步骤</span>
+          <strong className="goal-summary-value">{progressSummary.completedSteps}/{progressSummary.totalSteps}</strong>
+        </div>
+      </div>
+
+      <div className="goal-status-tabs">
+        {(["all", "active", "paused", "completed"] as const).map(s => (
+          <button
+            key={s}
+            className={`goal-status-tab ${statusFilter === s ? "active" : ""} ${s !== "all" ? goalStatusColors[s] : ""}`}
+            onClick={() => setStatusFilter(s)}
+          >
+            {s === "all" ? "全部" : goalStatusLabels[s]}
+            <span className="goal-status-count">{statusCounts[s]}</span>
+          </button>
+        ))}
+      </div>
+
+      {isFormOpen && editingGoal && (
+        <div className="tl-form-panel">
+          <div className="goal-form-grid">
+            <label>
+              <span>来访者代号</span>
+              <input
+                value={editingGoal.clientCode}
+                onChange={e => updateField("clientCode", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>目标状态</span>
+              <select
+                value={editingGoal.status}
+                onChange={e => updateField("status", e.target.value as GoalStatus)}
+              >
+                <option value="active">进行中</option>
+                <option value="paused">已暂停</option>
+                <option value="completed">已完成</option>
+              </select>
+            </label>
+            <label className="tl-form-full">
+              <span>阶段目标</span>
+              <input
+                value={editingGoal.goalTitle}
+                placeholder="填写阶段目标名称"
+                onChange={e => updateField("goalTitle", e.target.value)}
+              />
+            </label>
+            <label className="tl-form-full">
+              <span>目标描述</span>
+              <textarea
+                value={editingGoal.description}
+                placeholder="描述该阶段目标的具体内容和达成标准"
+                rows={2}
+                onChange={e => updateField("description", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>总步骤数</span>
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={editingGoal.totalSteps}
+                onChange={e => handleStepChange("totalSteps", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>已完成步骤</span>
+              <input
+                type="number"
+                min={0}
+                max={editingGoal.totalSteps}
+                value={editingGoal.completedSteps}
+                onChange={e => handleStepChange("completedSteps", e.target.value)}
+              />
+            </label>
+            <label className="tl-form-full">
+              <span>最近一次行动</span>
+              <input
+                value={editingGoal.lastAction}
+                placeholder="描述来访者最近完成的一次行动"
+                onChange={e => updateField("lastAction", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>行动日期</span>
+              <input
+                type="date"
+                value={editingGoal.lastActionDate}
+                onChange={e => updateField("lastActionDate", e.target.value)}
+              />
+            </label>
+            <label className="tl-form-full">
+              <span>下次练习</span>
+              <input
+                value={editingGoal.nextPractice}
+                placeholder="安排的下次练习内容"
+                onChange={e => updateField("nextPractice", e.target.value)}
+              />
+            </label>
+            <label>
+              <span>练习日期</span>
+              <input
+                type="date"
+                value={editingGoal.nextPracticeDate}
+                onChange={e => updateField("nextPracticeDate", e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="tl-form-actions">
+            <button onClick={handleCancel}>取消</button>
+            <button className="primary-action" onClick={handleSave}>保存目标</button>
+          </div>
+        </div>
+      )}
+
+      <div className="goal-list">
+        {filteredGoals.length === 0 && (
+          <p className="tl-empty">
+            {statusFilter === "all" ? "该来访者暂无干预目标，点击「新增目标」开始录入" : `该来访者暂无${goalStatusLabels[statusFilter]}的目标`}
+          </p>
+        )}
+        {filteredGoals.map(goal => (
+          <article key={goal.id} className="goal-card">
+            <div className="goal-card-header">
+              <div className="goal-card-title-row">
+                <h3 className="goal-card-title">{goal.goalTitle}</h3>
+                <span className={`goal-badge ${goalStatusColors[goal.status]}`}>
+                  {goalStatusLabels[goal.status]}
+                </span>
+              </div>
+              {goal.description && <p className="goal-card-desc">{goal.description}</p>}
+            </div>
+            <div className="goal-card-progress">
+              {renderProgressBar(goal.completedSteps, goal.totalSteps)}
+            </div>
+            <div className="goal-card-details">
+              <div className="goal-detail-item">
+                <span className="goal-detail-label">最近行动</span>
+                <span className="goal-detail-value">{goal.lastAction || "—"}</span>
+                {goal.lastActionDate && <span className="goal-detail-date">{goal.lastActionDate}</span>}
+              </div>
+              <div className="goal-detail-item">
+                <span className="goal-detail-label">下次练习</span>
+                <span className="goal-detail-value">{goal.nextPractice || "—"}</span>
+                {goal.nextPracticeDate && <span className="goal-detail-date">{goal.nextPracticeDate}</span>}
+              </div>
+            </div>
+            <div className="goal-card-footer">
+              <span className="goal-card-created">创建于 {goal.createdAt}</span>
+              <div className="goal-card-actions">
+                <button onClick={() => openEditForm(goal)}>编辑</button>
+                <button className="tl-btn-danger" onClick={() => onDeleteGoal(goal.id)}>删除</button>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const [assessments, setAssessments] = useState<RiskAssessment[]>(initialRiskAssessments);
+  const [goals, setGoals] = useState<InterventionGoal[]>(initialGoals);
 
   const { highRiskCount, mediumRiskCount, activeClientCodes } = useMemo(() => {
     const latestByClient = new Map<string, RiskAssessment>();
@@ -658,13 +1101,14 @@ function App() {
     }
     const codesFromTimeline = Array.from(new Set(initialTimelineData.map(r => r.clientCode)));
     const codesFromAssess = Array.from(latestByClient.keys());
-    const allCodes = Array.from(new Set([...codesFromTimeline, ...codesFromAssess])).sort();
+    const codesFromGoals = Array.from(new Set(goals.map(g => g.clientCode)));
+    const allCodes = Array.from(new Set([...codesFromTimeline, ...codesFromAssess, ...codesFromGoals])).sort();
     return {
       highRiskCount: high,
       mediumRiskCount: medium,
       activeClientCodes: allCodes
     };
-  }, [assessments]);
+  }, [assessments, goals]);
 
   const handleAddAssessment = (a: RiskAssessment) => {
     setAssessments(prev => [...prev, a]);
@@ -674,14 +1118,34 @@ function App() {
     setAssessments(prev => prev.filter(a => a.id !== id));
   };
 
+  const handleAddGoal = (g: InterventionGoal) => {
+    setGoals(prev => [...prev, g]);
+  };
+
+  const handleUpdateGoal = (g: InterventionGoal) => {
+    setGoals(prev => prev.map(item => item.id === g.id ? g : item));
+  };
+
+  const handleDeleteGoal = (id: string) => {
+    setGoals(prev => prev.filter(g => g.id !== id));
+  };
+
+  const goalProgressCount = useMemo(() => {
+    const activeGoals = goals.filter(g => g.status === "active");
+    if (activeGoals.length === 0) return "0";
+    const total = activeGoals.reduce((s, g) => s + g.totalSteps, 0);
+    const completed = activeGoals.reduce((s, g) => s + g.completedSteps, 0);
+    return total > 0 ? String(Math.round((completed / total) * 100)) + "%" : "0%";
+  }, [goals]);
+
   const metricValues = useMemo(() => {
     return [
       String(activeClientCodes.length + 78),
       String(highRiskCount + mediumRiskCount),
       "31",
-      "7"
+      goalProgressCount
     ];
-  }, [activeClientCodes.length, highRiskCount, mediumRiskCount]);
+  }, [activeClientCodes.length, highRiskCount, mediumRiskCount, goalProgressCount]);
 
   return (
     <main className="app-shell">
@@ -802,6 +1266,14 @@ function App() {
         assessments={assessments}
         onAddAssessment={handleAddAssessment}
         onDeleteAssessment={handleDeleteAssessment}
+        allClientCodes={activeClientCodes}
+      />
+
+      <GoalTrackingSection
+        goals={goals}
+        onAddGoal={handleAddGoal}
+        onUpdateGoal={handleUpdateGoal}
+        onDeleteGoal={handleDeleteGoal}
         allClientCodes={activeClientCodes}
       />
 
