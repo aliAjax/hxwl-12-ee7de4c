@@ -145,6 +145,7 @@ export interface RiskAssessment {
   level: RiskLevel;
   summary: string;
   explanation?: string;
+  createdAt?: string;
 }
 
 export type CrisisWarningStatus = "pending" | "confirmed" | "escalated" | "referred" | "closed";
@@ -784,6 +785,16 @@ function generateRiskExplanation(
   return lines.join("");
 }
 
+function compareRiskTime(a: RiskAssessment, b: RiskAssessment): number {
+  const aTime = a.createdAt ?? a.assessDate;
+  const bTime = b.createdAt ?? b.assessDate;
+  return bTime.localeCompare(aTime);
+}
+
+function isRiskNewer(a: RiskAssessment, b: RiskAssessment): boolean {
+  return compareRiskTime(a, b) < 0;
+}
+
 let nextTimelineId = 7;
 let nextRiskId = 4;
 
@@ -1026,14 +1037,16 @@ function RiskAssessmentSection({
 
   const handleSave = () => {
     const { level, score } = preview;
+    const now = new Date();
     const prevForClient = assessments
       .filter(a => a.clientCode === selectedClient)
-      .sort((a, b) => b.assessDate.localeCompare(a.assessDate))[0] ?? null;
+      .sort(compareRiskTime)[0] ?? null;
     const explanation = generateRiskExplanation(formData, level, score, prevForClient);
     const assessment: RiskAssessment = {
       id: "ra" + nextRiskId++,
       clientCode: selectedClient,
-      assessDate: new Date().toISOString().slice(0, 10),
+      assessDate: now.toISOString().slice(0, 10),
+      createdAt: now.toISOString(),
       dimensions: { ...formData },
       totalScore: score,
       level,
@@ -1057,7 +1070,7 @@ function RiskAssessmentSection({
 
   const clientAssessments = assessments
     .filter(a => a.clientCode === selectedClient)
-    .sort((a, b) => b.assessDate.localeCompare(a.assessDate));
+    .sort(compareRiskTime);
 
   return (
     <section className="records panel">
@@ -2730,7 +2743,7 @@ function DataOverviewSection({
       const latestByClient = new Map<string, RiskAssessment>();
       assessments.forEach(a => {
         const existing = latestByClient.get(a.clientCode);
-        if (!existing || existing.assessDate < a.assessDate) {
+        if (!existing || isRiskNewer(a, existing)) {
           latestByClient.set(a.clientCode, a);
         }
       });
@@ -2825,7 +2838,7 @@ function DataOverviewSection({
     if (hasDateFilter) {
       assessmentsInRange.forEach(a => {
         const existing = latestByClientInRange.get(a.clientCode);
-        if (!existing || existing.assessDate < a.assessDate) {
+        if (!existing || isRiskNewer(a, existing)) {
           latestByClientInRange.set(a.clientCode, a);
         }
       });
@@ -2835,7 +2848,7 @@ function DataOverviewSection({
         .filter(r => filteredClientCodes.includes(r.clientCode))
         .forEach(a => {
           const existing = latestByClientGlobal.get(a.clientCode);
-          if (!existing || existing.assessDate < a.assessDate) {
+          if (!existing || isRiskNewer(a, existing)) {
             latestByClientGlobal.set(a.clientCode, a);
           }
         });
@@ -4032,7 +4045,7 @@ function App() {
     const savedRecord = finalRecord.id ? finalRecord : { ...finalRecord, id: "cr" + (nextCaseRecordId - 1), createdAt: now };
     const latestRisk = assessments
       .filter(a => a.clientCode === savedRecord.clientCode)
-      .sort((a, b) => b.assessDate.localeCompare(a.assessDate))[0];
+      .sort(compareRiskTime)[0];
     const currentRiskLevel = latestRisk?.level || "stable";
     const { trigger, reasons } = shouldTriggerCrisisWarning(
       currentRiskLevel,
@@ -4444,7 +4457,7 @@ function App() {
     const latestByClient = new Map<string, RiskAssessment>();
     for (const a of assessments) {
       const existing = latestByClient.get(a.clientCode);
-      if (!existing || existing.assessDate < a.assessDate) {
+      if (!existing || isRiskNewer(a, existing)) {
         latestByClient.set(a.clientCode, a);
       }
     }
@@ -4539,7 +4552,7 @@ function App() {
     const map = new Map<string, RiskAssessment>();
     for (const a of assessments) {
       const existing = map.get(a.clientCode);
-      if (!existing || existing.assessDate < a.assessDate) {
+      if (!existing || isRiskNewer(a, existing)) {
         map.set(a.clientCode, a);
       }
     }
