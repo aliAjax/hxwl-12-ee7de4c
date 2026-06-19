@@ -2606,10 +2606,162 @@ function DataOverviewSection({
   );
 }
 
+interface CaseSearchFilters {
+  clientCode: string;
+  consultationTopic: string;
+  riskLevel: RiskLevel | "";
+  emotionalState: string;
+  intervention: string;
+  nextGoal: string;
+}
+
 interface Toast {
   id: number;
   message: string;
   type: "error" | "success" | "info";
+}
+
+function CaseSearchFilter({
+  filters,
+  onFiltersChange,
+  onReset,
+  resultCount,
+  totalCount,
+  allClientCodes,
+  allTopics,
+  allEmotionalStates,
+  allInterventions,
+}: {
+  filters: CaseSearchFilters;
+  onFiltersChange: (filters: CaseSearchFilters) => void;
+  onReset: () => void;
+  resultCount: number;
+  totalCount: number;
+  allClientCodes: string[];
+  allTopics: string[];
+  allEmotionalStates: string[];
+  allInterventions: string[];
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const hasActiveFilters = filters.clientCode || filters.consultationTopic
+    || filters.riskLevel || filters.emotionalState
+    || filters.intervention || filters.nextGoal;
+
+  const updateFilter = (field: keyof CaseSearchFilters, value: string) => {
+    onFiltersChange({ ...filters, [field]: value });
+  };
+
+  return (
+    <div className="case-search-panel">
+      <div className="case-search-header">
+        <div className="case-search-title-row">
+          <h3 className="case-search-title">个案搜索与高级筛选</h3>
+          <button
+            className="case-search-toggle"
+            onClick={() => setIsExpanded(!isExpanded)}
+          >
+            {isExpanded ? "收起筛选" : "展开筛选"}
+            <span className={`case-search-arrow ${isExpanded ? "expanded" : ""}`}>▼</span>
+          </button>
+        </div>
+        <div className="case-search-quick">
+          <input
+            className="case-search-input"
+            type="text"
+            placeholder="按来访者代号搜索…"
+            value={filters.clientCode}
+            onChange={e => updateFilter("clientCode", e.target.value)}
+          />
+          {hasActiveFilters && (
+            <div className="case-search-active-info">
+              <span className="case-search-result-count">
+                {resultCount} / {totalCount} 条记录
+              </span>
+              <button className="case-search-reset" onClick={onReset}>清除筛选</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="case-search-advanced">
+          <div className="case-search-grid">
+            <label className="case-search-field">
+              <span className="case-search-label">来访者代号</span>
+              <input
+                type="text"
+                placeholder="输入代号关键词"
+                value={filters.clientCode}
+                onChange={e => updateFilter("clientCode", e.target.value)}
+              />
+            </label>
+            <label className="case-search-field">
+              <span className="case-search-label">咨询主题</span>
+              <select
+                value={filters.consultationTopic}
+                onChange={e => updateFilter("consultationTopic", e.target.value)}
+              >
+                <option value="">全部主题</option>
+                {allTopics.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </label>
+            <label className="case-search-field">
+              <span className="case-search-label">风险等级</span>
+              <select
+                value={filters.riskLevel}
+                onChange={e => updateFilter("riskLevel", e.target.value)}
+              >
+                <option value="">全部等级</option>
+                {(["high", "medium", "watch", "stable"] as RiskLevel[]).map(level => (
+                  <option key={level} value={level}>{riskLevelLabels[level]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="case-search-field">
+              <span className="case-search-label">情绪状态</span>
+              <select
+                value={filters.emotionalState}
+                onChange={e => updateFilter("emotionalState", e.target.value)}
+              >
+                <option value="">全部状态</option>
+                {allEmotionalStates.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            </label>
+            <label className="case-search-field">
+              <span className="case-search-label">干预方法</span>
+              <select
+                value={filters.intervention}
+                onChange={e => updateFilter("intervention", e.target.value)}
+              >
+                <option value="">全部方法</option>
+                {allInterventions.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+            <label className="case-search-field">
+              <span className="case-search-label">下次目标关键词</span>
+              <input
+                type="text"
+                placeholder="输入目标关键词"
+                value={filters.nextGoal}
+                onChange={e => updateFilter("nextGoal", e.target.value)}
+              />
+            </label>
+          </div>
+          <div className="case-search-actions">
+            <span className="case-search-hint">支持多条件组合查询，条件间取交集</span>
+            <button className="case-search-reset-btn" onClick={onReset}>重置所有条件</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ToastContainer({ toasts }: { toasts: Toast[] }) {
@@ -2640,6 +2792,14 @@ function App() {
   const [caseFormData, setCaseFormData] = useState<Record<string, string>>({});
   const [editingCaseRecord, setEditingCaseRecord] = useState<CaseRecord | null>(null);
   const [isCaseFormOpen, setIsCaseFormOpen] = useState(false);
+  const [caseSearchFilters, setCaseSearchFilters] = useState<CaseSearchFilters>({
+    clientCode: "",
+    consultationTopic: "",
+    riskLevel: "",
+    emotionalState: "",
+    intervention: "",
+    nextGoal: "",
+  });
   const toastIdRef = useRef(0);
   const isLoadedRef = useRef(false);
   const isDBSupported = useMemo(() => checkDBSupport(), []);
@@ -3082,6 +3242,65 @@ function App() {
     ];
   }, [activeClientCodes.length, highRiskCount, mediumRiskCount, thisWeekSessionCount, goalProgressCount]);
 
+  const latestRiskByClient = useMemo(() => {
+    const map = new Map<string, RiskAssessment>();
+    for (const a of assessments) {
+      const existing = map.get(a.clientCode);
+      if (!existing || existing.assessDate < a.assessDate) {
+        map.set(a.clientCode, a);
+      }
+    }
+    return map;
+  }, [assessments]);
+
+  const caseSearchOptions = useMemo(() => {
+    const topics = Array.from(new Set(caseRecords.map(r => r.consultationTopic).filter(Boolean))).sort();
+    const emotionalStates = Array.from(new Set(caseRecords.map(r => r.emotionalState).filter(Boolean))).sort();
+    const interventions = Array.from(new Set(caseRecords.map(r => r.intervention).filter(Boolean))).sort();
+    return { topics, emotionalStates, interventions };
+  }, [caseRecords]);
+
+  const hasCaseSearchFilters = caseSearchFilters.clientCode || caseSearchFilters.consultationTopic
+    || caseSearchFilters.riskLevel || caseSearchFilters.emotionalState
+    || caseSearchFilters.intervention || caseSearchFilters.nextGoal;
+
+  const filteredCaseRecords = useMemo(() => {
+    if (!hasCaseSearchFilters) return caseRecords;
+    return caseRecords.filter(record => {
+      if (caseSearchFilters.clientCode) {
+        if (!record.clientCode.toLowerCase().includes(caseSearchFilters.clientCode.toLowerCase())) return false;
+      }
+      if (caseSearchFilters.consultationTopic) {
+        if (record.consultationTopic !== caseSearchFilters.consultationTopic) return false;
+      }
+      if (caseSearchFilters.riskLevel) {
+        const latestRisk = latestRiskByClient.get(record.clientCode);
+        if (!latestRisk || latestRisk.level !== caseSearchFilters.riskLevel) return false;
+      }
+      if (caseSearchFilters.emotionalState) {
+        if (record.emotionalState !== caseSearchFilters.emotionalState) return false;
+      }
+      if (caseSearchFilters.intervention) {
+        if (!record.intervention.toLowerCase().includes(caseSearchFilters.intervention.toLowerCase())) return false;
+      }
+      if (caseSearchFilters.nextGoal) {
+        if (!record.nextGoal.toLowerCase().includes(caseSearchFilters.nextGoal.toLowerCase())) return false;
+      }
+      return true;
+    });
+  }, [caseRecords, caseSearchFilters, hasCaseSearchFilters, latestRiskByClient]);
+
+  const resetCaseSearchFilters = useCallback(() => {
+    setCaseSearchFilters({
+      clientCode: "",
+      consultationTopic: "",
+      riskLevel: "",
+      emotionalState: "",
+      intervention: "",
+      nextGoal: "",
+    });
+  }, []);
+
   if (isLoading) {
     return (
       <main className="app-shell">
@@ -3326,37 +3545,73 @@ function App() {
               <div>
                 <p>个案档案</p>
                 <h2>近期记录</h2>
-                <p className="section-subtitle">共 {caseRecords.length} 条记录，数据已自动保存到本地浏览器</p>
+                <p className="section-subtitle">
+                  {hasCaseSearchFilters
+                    ? `筛选结果 ${filteredCaseRecords.length} / ${caseRecords.length} 条记录`
+                    : `共 ${caseRecords.length} 条记录，数据已自动保存到本地浏览器`}
+                </p>
               </div>
             </div>
+
+            <CaseSearchFilter
+              filters={caseSearchFilters}
+              onFiltersChange={setCaseSearchFilters}
+              onReset={resetCaseSearchFilters}
+              resultCount={filteredCaseRecords.length}
+              totalCount={caseRecords.length}
+              allClientCodes={activeClientCodes}
+              allTopics={caseSearchOptions.topics}
+              allEmotionalStates={caseSearchOptions.emotionalStates}
+              allInterventions={caseSearchOptions.interventions}
+            />
+
             <div className="record-list">
               {caseRecords.length === 0 && (
                 <p className="tl-empty">暂无个案记录，点击「新增个案记录」开始录入</p>
               )}
-              {caseRecords
+              {caseRecords.length > 0 && filteredCaseRecords.length === 0 && (
+                <div className="case-search-empty">
+                  <p className="case-search-empty-icon">🔍</p>
+                  <p className="case-search-empty-text">没有找到匹配的个案记录</p>
+                  <p className="case-search-empty-hint">请尝试调整筛选条件或清除部分关键词</p>
+                  <button className="case-search-empty-btn" onClick={resetCaseSearchFilters}>清除所有筛选</button>
+                </div>
+              )}
+              {filteredCaseRecords
                 .slice()
                 .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))
-                .map((record, index) => (
-                <article key={record.id} className="record-card">
-                  <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-                  <div className="record-body">
-                    <div className="record-header">
-                      <h3>{record.clientCode}</h3>
-                      <span className="record-date">{record.sessionDate}</span>
-                      <span className="record-topic">{record.consultationTopic}</span>
-                    </div>
-                    <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
-                    <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
-                    {record.nextGoal && (
-                      <p className="record-next-goal"><strong>下次目标：</strong>{record.nextGoal}</p>
-                    )}
-                    <div className="record-actions">
-                      <button onClick={() => openEditCaseForm(record)}>编辑</button>
-                      <button className="tl-btn-danger" onClick={() => handleDeleteCaseRecord(record.id)}>删除</button>
-                    </div>
-                  </div>
-                </article>
-              ))}
+                .map((record, index) => {
+                  const riskInfo = latestRiskByClient.get(record.clientCode);
+                  return (
+                    <article key={record.id} className="record-card">
+                      <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
+                      <div className="record-body">
+                        <div className="record-header">
+                          <h3>{record.clientCode}</h3>
+                          <span className="record-date">{record.sessionDate}</span>
+                          <span className="record-topic">{record.consultationTopic}</span>
+                          {riskInfo && (
+                            <span className={`risk-badge-inline ${riskLevelColors[riskInfo.level]}`}>
+                              {riskLevelLabels[riskInfo.level]}
+                            </span>
+                          )}
+                        </div>
+                        <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
+                        <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
+                        {record.nextGoal && (
+                          <p className="record-next-goal"><strong>下次目标：</strong>{record.nextGoal}</p>
+                        )}
+                        <div className="record-meta-tags">
+                          <span className="record-meta-tag">{record.emotionalState}</span>
+                        </div>
+                        <div className="record-actions">
+                          <button onClick={() => openEditCaseForm(record)}>编辑</button>
+                          <button className="tl-btn-danger" onClick={() => handleDeleteCaseRecord(record.id)}>删除</button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
             </div>
           </section>
 
