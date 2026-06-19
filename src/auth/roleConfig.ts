@@ -232,6 +232,7 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
       "menu.dataOverview",
       "menu.export",
       "menu.auditLog",
+      "menu.crisisWarning",
     ],
     exportScopes: [
       {

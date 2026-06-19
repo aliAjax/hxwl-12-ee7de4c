@@ -5237,24 +5237,26 @@ function App() {
               <strong className="risk-dist-count">{stableRiskCount}</strong>
             </div>
           </div>
-          <h2>危机预警</h2>
-          <div className="cw-sidebar-summary">
-            <div className={`cw-sidebar-alert ${crisisWarningStats.pending > 0 ? "cw-alert-active" : ""}`}>
-              <span className="cw-sidebar-alert-icon">🚨</span>
-              <strong className="cw-sidebar-alert-count">{crisisWarningStats.pending}</strong>
-              <span className="cw-sidebar-alert-label">待处理</span>
-            </div>
-            <div className="cw-sidebar-stats">
-              <div className="cw-sidebar-stat">
-                <span className="cw-sidebar-stat-label">活跃预警</span>
-                <strong className="cw-sidebar-stat-value">{crisisWarningStats.openWarnings}</strong>
+          <ProtectedMenu menu="menu.crisisWarning">
+            <h2>危机预警</h2>
+            <div className="cw-sidebar-summary">
+              <div className={`cw-sidebar-alert ${crisisWarningStats.pending > 0 ? "cw-alert-active" : ""}`}>
+                <span className="cw-sidebar-alert-icon">🚨</span>
+                <strong className="cw-sidebar-alert-count">{crisisWarningStats.pending}</strong>
+                <span className="cw-sidebar-alert-label">待处理</span>
               </div>
-              <div className="cw-sidebar-stat">
-                <span className="cw-sidebar-stat-label">涉及个案</span>
-                <strong className="cw-sidebar-stat-value">{crisisWarningStats.byClient.size}</strong>
+              <div className="cw-sidebar-stats">
+                <div className="cw-sidebar-stat">
+                  <span className="cw-sidebar-stat-label">活跃预警</span>
+                  <strong className="cw-sidebar-stat-value">{crisisWarningStats.openWarnings}</strong>
+                </div>
+                <div className="cw-sidebar-stat">
+                  <span className="cw-sidebar-stat-label">涉及个案</span>
+                  <strong className="cw-sidebar-stat-value">{crisisWarningStats.byClient.size}</strong>
+                </div>
               </div>
             </div>
-          </div>
+          </ProtectedMenu>
           <h2>离线存储</h2>
           <div className="db-status-section">
             <span className={`db-status-dot ${dbStatus.isConnected ? 'db-status-online' : 'db-status-offline'}`} />
