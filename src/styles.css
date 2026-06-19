@@ -4444,3 +4444,141 @@ button:disabled {
   }
 }
 
+.export-scope-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-scope-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 2px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  width: 100%;
+}
+
+.export-scope-btn:hover:not(.disabled) {
+  border-color: var(--accent-primary);
+  background: var(--bg-hover);
+  transform: translateY(-1px);
+}
+
+.export-scope-btn.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary-bg);
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.15);
+}
+
+.export-scope-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.5);
+}
+
+.export-scope-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-muted);
+  border-radius: 8px;
+}
+
+.export-scope-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.export-scope-label {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.export-scope-desc {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.export-scope-perm-info {
+  background: var(--bg-muted);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.export-scope-perm-status {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+
+.perm-allowed {
+  color: #059669;
+}
+
+.perm-denied {
+  color: #dc2626;
+}
+
+.export-scope-includes {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  line-height: 1.6;
+}
+
+.export-scope-desensitize {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.summary-meta-badges {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.summary-export-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.summary-raw-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+@media (max-width: 768px) {
+  .summary-raw-header {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .summary-meta-badges {
+    flex-wrap: wrap;
+  }
+
+  .export-scope-btn {
+    padding: 10px 12px;
+  }
+}
+

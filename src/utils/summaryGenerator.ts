@@ -7,6 +7,8 @@ import type {
   GoalStatus,
 } from "../App";
 import { desensitizeText, getMaskedItemLabel, type MaskedItemInfo } from "./desensitize";
+import type { UserRole } from "../auth/roleConfig";
+import type { AuditLog } from "../auth/auditLog";
 
 export interface SummaryInput {
   clientCode: string;
@@ -351,4 +353,524 @@ export async function copySummaryToClipboard(text: string): Promise<boolean> {
     console.error("复制失败:", e);
     return false;
   }
+}
+
+export interface ExportOptions {
+  scopeKey: string;
+  scopeLabel: string;
+  includes: string[];
+  desensitized: boolean;
+  operatorRole: UserRole;
+  operatorName?: string;
+  targetClientCode?: string;
+  dateRange?: { start?: string; end?: string };
+}
+
+export interface ExportResult {
+  title: string;
+  content: string;
+  summary?: GeneratedSummary;
+  meta: {
+    scopeKey: string;
+    scopeLabel: string;
+    desensitized: boolean;
+    includes: string[];
+    recordCount: number;
+    generationDate: string;
+    operatorRole: UserRole;
+    operatorName?: string;
+    targetClientCode?: string;
+    dateRange?: { start?: string; end?: string };
+  };
+  allMaskedItems: MaskedItemInfo[];
+}
+
+function filterSummaryByIncludes(
+  summary: GeneratedSummary,
+  includes: string[]
+): { sections: SummarySection[]; maskedItems: MaskedItemInfo[] } {
+  const sectionMap: Record<string, SummarySection> = {
+    "基本主题": summary.basicTopics,
+    "风险变化": summary.riskChanges,
+    "关键干预": summary.keyInterventions,
+    "目标进展": summary.goalProgress,
+    "下次计划": summary.nextPlan,
+  };
+
+  const sections: SummarySection[] = [];
+  includes.forEach((include) => {
+    if (sectionMap[include]) {
+      sections.push(sectionMap[include]);
+    }
+  });
+
+  return {
+    sections,
+    maskedItems: summary.allMaskedItems,
+  };
+}
+
+function generateAggregateReport(
+  timeline: TimelineRecord[],
+  assessments: RiskAssessment[],
+  goals: InterventionGoal[],
+  caseRecords: CaseRecord[],
+  desensitized: boolean
+): { content: string; maskedItems: MaskedItemInfo[] } {
+  const allMaskedItems: MaskedItemInfo[] = [];
+  const lines: string[] = [];
+
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("                心理咨询机构汇总报表");
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("");
+  lines.push(`生成日期：${new Date().toLocaleString("zh-CN")}`);
+  lines.push("");
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+
+  lines.push("一、个案数量统计");
+  lines.push("");
+  const uniqueClientCodes = Array.from(
+    new Set([
+      ...timeline.map((r) => r.clientCode),
+      ...assessments.map((r) => r.clientCode),
+      ...goals.map((r) => r.clientCode),
+      ...caseRecords.map((r) => r.clientCode),
+    ])
+  ).sort();
+  lines.push(`活跃来访者总数：${uniqueClientCodes.length} 人`);
+  lines.push(`时间线记录总数：${timeline.length} 条`);
+  lines.push(`风险评估总数：${assessments.length} 次`);
+  lines.push(`干预目标总数：${goals.length} 个`);
+  lines.push(`个案记录总数：${caseRecords.length} 份`);
+  lines.push("");
+
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+  lines.push("二、风险等级分布");
+  lines.push("");
+  const riskCountByLevel: Record<RiskLevel, number> = {
+    stable: 0,
+    watch: 0,
+    medium: 0,
+    high: 0,
+  };
+  const latestRiskByClient = new Map<string, RiskAssessment>();
+  for (const a of assessments) {
+    const existing = latestRiskByClient.get(a.clientCode);
+    if (!existing || existing.assessDate < a.assessDate) {
+      latestRiskByClient.set(a.clientCode, a);
+    }
+  }
+  for (const a of latestRiskByClient.values()) {
+    riskCountByLevel[a.level]++;
+  }
+  const riskTotal = Object.values(riskCountByLevel).reduce((s, n) => s + n, 0);
+  Object.entries(riskCountByLevel).forEach(([level, count]) => {
+    const label = riskLevelLabels[level as RiskLevel];
+    const percent = riskTotal > 0 ? Math.round((count / riskTotal) * 100) : 0;
+    lines.push(`  ${label}：${count} 人（${percent}%）`);
+  });
+  lines.push("");
+
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+  lines.push("三、咨询主题分布");
+  lines.push("");
+  const topicCount = new Map<string, number>();
+  caseRecords.forEach((r) => {
+    if (r.consultationTopic) {
+      topicCount.set(r.consultationTopic, (topicCount.get(r.consultationTopic) || 0) + 1);
+    }
+  });
+  timeline.forEach((r) => {
+    if (r.topic) {
+      topicCount.set(r.topic, (topicCount.get(r.topic) || 0) + 1);
+    }
+  });
+  const sortedTopics = Array.from(topicCount.entries()).sort((a, b) => b[1] - a[1]);
+  const topicTotal = sortedTopics.reduce((s, [, c]) => s + c, 0);
+  if (sortedTopics.length > 0) {
+    sortedTopics.slice(0, 10).forEach(([topic, count], idx) => {
+      const percent = topicTotal > 0 ? Math.round((count / topicTotal) * 100) : 0;
+      lines.push(`  ${idx + 1}. ${topic}：${count} 次（${percent}%）`);
+    });
+  } else {
+    lines.push("  暂无咨询主题记录");
+  }
+  lines.push("");
+
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+  lines.push("四、目标完成率");
+  lines.push("");
+  const statusCount: Record<GoalStatus, number> = {
+    active: 0,
+    paused: 0,
+    completed: 0,
+  };
+  goals.forEach((g) => {
+    statusCount[g.status]++;
+  });
+  const totalSteps = goals.reduce((s, g) => s + g.totalSteps, 0);
+  const completedSteps = goals.reduce((s, g) => s + g.completedSteps, 0);
+  const overallProgress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
+  lines.push(`目标总数：${goals.length} 个`);
+  lines.push(`  进行中：${statusCount.active} 个`);
+  lines.push(`  已暂停：${statusCount.paused} 个`);
+  lines.push(`  已完成：${statusCount.completed} 个`);
+  const completionRate = goals.length > 0 ? Math.round((statusCount.completed / goals.length) * 100) : 0;
+  lines.push(`目标完成率：${completionRate}%`);
+  lines.push(`综合进度：${overallProgress}%（${completedSteps}/${totalSteps} 步骤）`);
+  lines.push("");
+
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("                    报告结束");
+  lines.push("═══════════════════════════════════════════════════════════");
+
+  let result = lines.join("\n");
+
+  if (desensitized) {
+    const desensitized = desensitizeText(result);
+    result = desensitized.text;
+    desensitized.maskedItems.forEach((item) => {
+      const exists = allMaskedItems.some(
+        (m) => m.type === item.type && m.masked === item.masked
+      );
+      if (!exists) allMaskedItems.push(item);
+    });
+  }
+
+  return { content: result, maskedItems: allMaskedItems };
+}
+
+function generateFullDataExport(
+  timeline: TimelineRecord[],
+  assessments: RiskAssessment[],
+  goals: InterventionGoal[],
+  caseRecords: CaseRecord[],
+  auditLogs: AuditLog[],
+  desensitized: boolean,
+  targetClientCode?: string
+): { content: string; maskedItems: MaskedItemInfo[] } {
+  const allMaskedItems: MaskedItemInfo[] = [];
+  const lines: string[] = [];
+
+  const scopeLabel = targetClientCode
+    ? `【${targetClientCode}】完整数据导出`
+    : "全量完整数据导出";
+
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("                " + scopeLabel);
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("");
+  lines.push(`生成日期：${new Date().toLocaleString("zh-CN")}`);
+  lines.push(`数据范围：${targetClientCode ? "单个来访者" : "全部来访者"}`);
+  lines.push(`脱敏模式：${desensitized ? "已启用" : "未启用"}`);
+  lines.push("");
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+
+  const filterFn = targetClientCode
+    ? (r: { clientCode: string }) => r.clientCode === targetClientCode
+    : () => true;
+
+  const filteredTimeline = timeline.filter(filterFn);
+  const filteredAssessments = assessments.filter(filterFn);
+  const filteredGoals = goals.filter(filterFn);
+  const filteredCaseRecords = caseRecords.filter(filterFn);
+
+  lines.push("一、全部会谈记录（时间线+个案档案）");
+  lines.push("");
+  const allRecords = [
+    ...filteredTimeline.map((r) => ({
+      date: r.sessionDate,
+      type: "时间线",
+      topic: r.topic || r.eventType || "未分类",
+      content: `情绪：${r.emotionalState || "—"} | 干预：${r.intervention || "—"} | 备注：${r.notes || "—"}`,
+    })),
+    ...filteredCaseRecords.map((r) => ({
+      date: r.sessionDate,
+      type: "个案档案",
+      topic: r.consultationTopic,
+      content: `情绪：${r.emotionalState} | 困扰：${r.mainConcern} | 干预：${r.intervention} | 下次：${r.nextGoal || "—"}`,
+    })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+
+  allRecords.forEach((r, idx) => {
+    lines.push(`${idx + 1}. [${r.date}] ${r.type} - ${r.topic}`);
+    lines.push(`   ${r.content}`);
+    lines.push("");
+  });
+  if (allRecords.length === 0) lines.push("  暂无记录");
+  lines.push("");
+
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+  lines.push("二、完整风险评估");
+  lines.push("");
+  filteredAssessments
+    .sort((a, b) => a.assessDate.localeCompare(b.assessDate))
+    .forEach((a, idx) => {
+      lines.push(`${idx + 1}. [${a.assessDate}] ${a.clientCode}`);
+      lines.push(`   综合评分：${a.totalScore} 分（${riskLevelLabels[a.level]}）`);
+      lines.push(`   维度得分：睡眠${a.dimensions.sleep}/情绪${a.dimensions.emotion}/自伤${a.dimensions.selfHarm}/支持${a.dimensions.support}/压力${a.dimensions.stress}`);
+      if (a.summary) lines.push(`   评估摘要：${a.summary}`);
+      if (a.notes) lines.push(`   备注：${a.notes}`);
+      lines.push("");
+    });
+  if (filteredAssessments.length === 0) lines.push("  暂无风险评估记录");
+  lines.push("");
+
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+  lines.push("三、干预目标详情");
+  lines.push("");
+  filteredGoals
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .forEach((g, idx) => {
+      const progress = g.totalSteps > 0 ? Math.round((g.completedSteps / g.totalSteps) * 100) : 0;
+      lines.push(`${idx + 1}. 目标：${g.goalTitle}`);
+      lines.push(`   状态：${goalStatusLabels[g.status]} | 进度：${progress}%（${g.completedSteps}/${g.totalSteps}）`);
+      if (g.description) lines.push(`   描述：${g.description}`);
+      if (g.lastAction) lines.push(`   最近行动：${g.lastAction}（${g.lastActionDate || "日期未记"}）`);
+      if (g.nextPractice && g.status === "active")
+        lines.push(`   下次练习：${g.nextPractice}（${g.nextPracticeDate || "日期未安排"}）`);
+      lines.push("");
+    });
+  if (filteredGoals.length === 0) lines.push("  暂无干预目标记录");
+  lines.push("");
+
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+  lines.push("四、审计日志记录（操作行为追踪）");
+  lines.push("");
+  const filteredAuditLogs = auditLogs
+    .filter((log) => !targetClientCode || log.targetLabel === targetClientCode)
+    .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+    .slice(0, 200);
+
+  filteredAuditLogs.forEach((log, idx) => {
+    const actionLabels: Record<string, string> = {
+      create: "创建",
+      update: "更新",
+      delete: "删除",
+      export: "导出",
+      feedback: "督导反馈",
+      submit: "提交",
+      login: "登录",
+      role_change: "角色切换",
+      system_reset: "系统重置",
+      view: "查看",
+    };
+    const targetLabels: Record<string, string> = {
+      case_record: "个案记录",
+      timeline_record: "时间线",
+      risk_assessment: "风险评估",
+      intervention_goal: "干预目标",
+      supervision_record: "督导申请",
+      supervision_feedback: "督导反馈",
+      user_session: "用户会话",
+      system: "系统",
+      audit_log: "审计日志",
+      export_report: "导出报告",
+    };
+    const statusLabels: Record<string, string> = {
+      success: "成功",
+      denied: "拒绝",
+      failed: "失败",
+      pending: "待处理",
+    };
+    lines.push(
+      `${idx + 1}. [${new Date(log.timestamp).toLocaleString("zh-CN")}] ` +
+        `${actionLabels[log.action] || log.action} ` +
+        `${targetLabels[log.targetType] || log.targetType} ` +
+        `[${log.targetLabel || log.targetId || ""}] ` +
+        `(${log.actorName} / ${log.actorRole}) ` +
+        `→ ${statusLabels[log.status] || log.status}`
+    );
+    if (log.message) lines.push(`   ${log.message}`);
+  });
+  if (filteredAuditLogs.length === 0) lines.push("  暂无审计日志记录");
+  lines.push("");
+
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("                    报告结束");
+  lines.push("═══════════════════════════════════════════════════════════");
+
+  let result = lines.join("\n");
+
+  if (desensitized) {
+    const desensitized = desensitizeText(result);
+    result = desensitized.text;
+    desensitized.maskedItems.forEach((item) => {
+      const exists = allMaskedItems.some(
+        (m) => m.type === item.type && m.masked === item.masked
+      );
+      if (!exists) allMaskedItems.push(item);
+    });
+  }
+
+  return { content: result, maskedItems: allMaskedItems };
+}
+
+export function generateExportByScope(
+  options: ExportOptions,
+  summaryData: {
+    clientCode?: string;
+    startDate?: string;
+    endDate?: string;
+    timeline: TimelineRecord[];
+    assessments: RiskAssessment[];
+    goals: InterventionGoal[];
+    caseRecords: CaseRecord[];
+    auditLogs?: AuditLog[];
+  }
+): ExportResult {
+  const { scopeKey, scopeLabel, includes, desensitized, operatorRole, operatorName, targetClientCode, dateRange } = options;
+  const { clientCode, startDate, endDate, timeline, assessments, goals, caseRecords, auditLogs = [] } = summaryData;
+
+  const generationDate = new Date().toLocaleString("zh-CN");
+
+  if (scopeKey === "admin_aggregate") {
+    const { content, maskedItems } = generateAggregateReport(timeline, assessments, goals, caseRecords, desensitized);
+    return {
+      title: "机构汇总报表",
+      content,
+      meta: {
+        scopeKey,
+        scopeLabel,
+        desensitized,
+        includes,
+        recordCount: caseRecords.length + timeline.length + assessments.length + goals.length,
+        generationDate,
+        operatorRole,
+        operatorName,
+      },
+      allMaskedItems: maskedItems,
+    };
+  }
+
+  if (scopeKey === "admin_full" || scopeKey === "supervisor_full") {
+    const { content, maskedItems } = generateFullDataExport(
+      timeline,
+      assessments,
+      goals,
+      caseRecords,
+      auditLogs,
+      desensitized,
+      targetClientCode || clientCode
+    );
+    return {
+      title: scopeLabel,
+      content,
+      meta: {
+        scopeKey,
+        scopeLabel,
+        desensitized,
+        includes,
+        recordCount: caseRecords.length + timeline.length + assessments.length + goals.length + auditLogs.length,
+        generationDate,
+        operatorRole,
+        operatorName,
+        targetClientCode: targetClientCode || clientCode,
+        dateRange,
+      },
+      allMaskedItems: maskedItems,
+    };
+  }
+
+  const summary = generateSummary({
+    clientCode: clientCode || targetClientCode || "",
+    startDate: startDate || dateRange?.start || "",
+    endDate: endDate || dateRange?.end || "",
+    timeline,
+    assessments,
+    goals,
+    caseRecords,
+  });
+
+  const { sections, maskedItems } = filterSummaryByIncludes(summary, includes);
+
+  const lines: string[] = [];
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("                " + scopeLabel);
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("");
+  lines.push(`来访者代号：${summary.meta.clientCode}`);
+  const dateRangeStr = summary.meta.startDate && summary.meta.endDate
+    ? `${summary.meta.startDate} 至 ${summary.meta.endDate}`
+    : summary.meta.startDate
+      ? `${summary.meta.startDate} 至今`
+      : summary.meta.endDate
+        ? `截至 ${summary.meta.endDate}`
+        : "全部记录";
+  lines.push(`时间范围：${dateRangeStr}`);
+  lines.push(`会谈次数：${summary.meta.sessionCount} 次`);
+  lines.push(`生成日期：${generationDate}`);
+  lines.push(`操作角色：${operatorName}（${operatorRole}）`);
+  lines.push(`脱敏模式：${desensitized ? "已启用" : "未启用"}`);
+  lines.push("");
+  lines.push("───────────────────────────────────────────────────────────");
+  lines.push("");
+
+  sections.forEach((section, idx) => {
+    lines.push(section.title);
+    lines.push("");
+    lines.push(section.content);
+    if (idx < sections.length - 1) {
+      lines.push("");
+      lines.push("───────────────────────────────────────────────────────────");
+      lines.push("");
+    }
+  });
+
+  if (maskedItems.length > 0) {
+    lines.push("");
+    lines.push("───────────────────────────────────────────────────────────");
+    lines.push("");
+    lines.push(`🔒 已脱敏 ${maskedItems.length} 项敏感信息：`);
+    maskedItems.forEach((item) => {
+      lines.push(`  - ${getMaskedItemLabel(item)}`);
+    });
+  }
+
+  lines.push("");
+  lines.push("═══════════════════════════════════════════════════════════");
+  lines.push("                    报告结束");
+  lines.push("═══════════════════════════════════════════════════════════");
+
+  let finalContent = lines.join("\n");
+  let finalMaskedItems = [...maskedItems];
+
+  if (desensitized) {
+    const desensitizedResult = desensitizeText(finalContent);
+    finalContent = desensitizedResult.text;
+    desensitizedResult.maskedItems.forEach((item) => {
+      const exists = finalMaskedItems.some(
+        (m) => m.type === item.type && m.masked === item.masked
+      );
+      if (!exists) finalMaskedItems.push(item);
+    });
+  }
+
+  return {
+    title: scopeLabel,
+    content: finalContent,
+    summary,
+    meta: {
+      scopeKey,
+      scopeLabel,
+      desensitized,
+      includes,
+      recordCount: summary.meta.sessionCount,
+      generationDate,
+      operatorRole,
+      operatorName,
+      targetClientCode: clientCode || targetClientCode,
+      dateRange: { start: startDate || dateRange?.start, end: endDate || dateRange?.end },
+    },
+    allMaskedItems: finalMaskedItems,
+  };
 }
