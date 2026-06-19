@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import "./styles.css";
+import SessionSummaryExport from "./components/SessionSummaryExport";
 import {
   loadAllData,
   saveTimelineRecord,
@@ -3327,7 +3328,6 @@ function App() {
                 <h2>近期记录</h2>
                 <p className="section-subtitle">共 {caseRecords.length} 条记录，数据已自动保存到本地浏览器</p>
               </div>
-              <button className="secondary-action">导出摘要</button>
             </div>
             <div className="record-list">
               {caseRecords.length === 0 && (
@@ -3392,6 +3392,15 @@ function App() {
             onSubmitForSupervision={handleSubmitForSupervision}
             onSaveDraft={handleSaveDraft}
             onAddFeedback={handleAddFeedback}
+          />
+
+          <SessionSummaryExport
+            clientCodes={activeClientCodes}
+            timeline={timeline}
+            assessments={assessments}
+            goals={goals}
+            caseRecords={caseRecords}
+            onToast={showToast}
           />
         </>
       )}
