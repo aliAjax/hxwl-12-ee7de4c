@@ -3131,15 +3131,43 @@ interface CaseSearchFilters {
   clientCode: string;
   consultationTopic: string;
   riskLevel: RiskLevel | "";
+  crisisWarningStatus: CrisisWarningStatus | "";
   emotionalState: string;
   intervention: string;
   nextGoal: string;
+  keyword: string;
+}
+
+interface SavedFilterView {
+  id: string;
+  name: string;
+  filters: Omit<CaseSearchFilters, "clientCode"> & { clientCode?: string };
+  createdAt: string;
 }
 
 interface Toast {
   id: number;
   message: string;
   type: "error" | "success" | "info";
+}
+
+const SAVED_VIEWS_STORAGE_KEY = "hxwl12_saved_filter_views";
+
+function loadSavedViews(): SavedFilterView[] {
+  try {
+    const data = localStorage.getItem(SAVED_VIEWS_STORAGE_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSavedViews(views: SavedFilterView[]): void {
+  try {
+    localStorage.setItem(SAVED_VIEWS_STORAGE_KEY, JSON.stringify(views));
+  } catch {
+    console.error("Failed to save filter views");
+  }
 }
 
 function CaseSearchFilter({
@@ -3152,6 +3180,7 @@ function CaseSearchFilter({
   allTopics,
   allEmotionalStates,
   allInterventions,
+  showToast,
 }: {
   filters: CaseSearchFilters;
   onFiltersChange: (filters: CaseSearchFilters) => void;
@@ -3162,19 +3191,140 @@ function CaseSearchFilter({
   allTopics: string[];
   allEmotionalStates: string[];
   allInterventions: string[];
+  showToast: (message: string, type?: "error" | "success" | "info") => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [savedViews, setSavedViews] = useState<SavedFilterView[]>(() => loadSavedViews());
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  const [showViewManager, setShowViewManager] = useState(false);
 
   const hasActiveFilters = filters.clientCode || filters.consultationTopic
-    || filters.riskLevel || filters.emotionalState
-    || filters.intervention || filters.nextGoal;
+    || filters.riskLevel || filters.crisisWarningStatus
+    || filters.emotionalState || filters.intervention
+    || filters.nextGoal || filters.keyword;
 
   const updateFilter = (field: keyof CaseSearchFilters, value: string) => {
     onFiltersChange({ ...filters, [field]: value });
+    setActiveViewId(null);
   };
+
+  const applyView = (view: SavedFilterView) => {
+    onFiltersChange({
+      clientCode: view.filters.clientCode || "",
+      consultationTopic: view.filters.consultationTopic || "",
+      riskLevel: view.filters.riskLevel || "",
+      crisisWarningStatus: view.filters.crisisWarningStatus || "",
+      emotionalState: view.filters.emotionalState || "",
+      intervention: view.filters.intervention || "",
+      nextGoal: view.filters.nextGoal || "",
+      keyword: view.filters.keyword || "",
+    });
+    setActiveViewId(view.id);
+    showToast(`已切换到视图「${view.name}」`, "success");
+  };
+
+  const handleSaveView = () => {
+    if (!newViewName.trim()) {
+      showToast("请输入视图名称", "error");
+      return;
+    }
+    const newView: SavedFilterView = {
+      id: `view_${Date.now()}`,
+      name: newViewName.trim(),
+      filters: {
+        consultationTopic: filters.consultationTopic,
+        riskLevel: filters.riskLevel,
+        crisisWarningStatus: filters.crisisWarningStatus,
+        emotionalState: filters.emotionalState,
+        intervention: filters.intervention,
+        nextGoal: filters.nextGoal,
+        keyword: filters.keyword,
+        clientCode: filters.clientCode || undefined,
+      },
+      createdAt: new Date().toISOString(),
+    };
+    const updatedViews = [...savedViews, newView];
+    setSavedViews(updatedViews);
+    saveSavedViews(updatedViews);
+    setActiveViewId(newView.id);
+    setShowSaveDialog(false);
+    setNewViewName("");
+    showToast(`视图「${newView.name}」已保存`, "success");
+  };
+
+  const handleDeleteView = (viewId: string, viewName: string) => {
+    if (!confirm(`确定要删除视图「${viewName}」吗？`)) return;
+    const updatedViews = savedViews.filter(v => v.id !== viewId);
+    setSavedViews(updatedViews);
+    saveSavedViews(updatedViews);
+    if (activeViewId === viewId) {
+      setActiveViewId(null);
+    }
+    showToast(`视图「${viewName}」已删除`, "info");
+  };
+
+  const handleReset = () => {
+    onReset();
+    setActiveViewId(null);
+  };
+
+  const crisisWarningStatuses: CrisisWarningStatus[] = ["pending", "confirmed", "escalated", "referred", "closed"];
 
   return (
     <div className="case-search-panel">
+      {savedViews.length > 0 && (
+        <div className="case-views-bar">
+          <div className="case-views-label">常用视图：</div>
+          <div className="case-views-tabs">
+            <button
+              className={`case-view-tab ${activeViewId === null ? "active" : ""}`}
+              onClick={handleReset}
+            >
+              全部
+            </button>
+            {savedViews.map(view => (
+              <button
+                key={view.id}
+                className={`case-view-tab ${activeViewId === view.id ? "active" : ""}`}
+                onClick={() => applyView(view)}
+              >
+                {view.name}
+              </button>
+            ))}
+          </div>
+          <div className="case-views-actions">
+            <button
+              className="case-view-save-btn"
+              onClick={() => setShowSaveDialog(true)}
+              disabled={!hasActiveFilters}
+              title={hasActiveFilters ? "保存当前筛选条件为视图" : "请先设置筛选条件"}
+            >
+              💾 保存视图
+            </button>
+            <button
+              className="case-view-manage-btn"
+              onClick={() => setShowViewManager(true)}
+            >
+              ⚙️ 管理
+            </button>
+          </div>
+        </div>
+      )}
+
+      {savedViews.length === 0 && hasActiveFilters && (
+        <div className="case-views-empty">
+          <span>设置好筛选条件后，可以点击「保存视图」将常用条件保存下来，下次直接切换</span>
+          <button
+            className="case-view-save-btn"
+            onClick={() => setShowSaveDialog(true)}
+          >
+            💾 保存视图
+          </button>
+        </div>
+      )}
+
       <div className="case-search-header">
         <div className="case-search-title-row">
           <h3 className="case-search-title">个案搜索与高级筛选</h3>
@@ -3194,12 +3344,19 @@ function CaseSearchFilter({
             value={filters.clientCode}
             onChange={e => updateFilter("clientCode", e.target.value)}
           />
+          <input
+            className="case-search-input"
+            type="text"
+            placeholder="关键词搜索（主要困扰、干预方法）…"
+            value={filters.keyword}
+            onChange={e => updateFilter("keyword", e.target.value)}
+          />
           {hasActiveFilters && (
             <div className="case-search-active-info">
               <span className="case-search-result-count">
                 {resultCount} / {totalCount} 条记录
               </span>
-              <button className="case-search-reset" onClick={onReset}>清除筛选</button>
+              <button className="case-search-reset" onClick={handleReset}>清除筛选</button>
             </div>
           )}
         </div>
@@ -3242,6 +3399,18 @@ function CaseSearchFilter({
               </select>
             </label>
             <label className="case-search-field">
+              <span className="case-search-label">危机预警状态</span>
+              <select
+                value={filters.crisisWarningStatus}
+                onChange={e => updateFilter("crisisWarningStatus", e.target.value)}
+              >
+                <option value="">全部状态</option>
+                {crisisWarningStatuses.map(status => (
+                  <option key={status} value={status}>{crisisWarningStatusLabels[status]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="case-search-field">
               <span className="case-search-label">情绪状态</span>
               <select
                 value={filters.emotionalState}
@@ -3274,10 +3443,119 @@ function CaseSearchFilter({
                 onChange={e => updateFilter("nextGoal", e.target.value)}
               />
             </label>
+            <label className="case-search-field">
+              <span className="case-search-label">全文关键词</span>
+              <input
+                type="text"
+                placeholder="输入关键词搜索"
+                value={filters.keyword}
+                onChange={e => updateFilter("keyword", e.target.value)}
+              />
+            </label>
           </div>
           <div className="case-search-actions">
             <span className="case-search-hint">支持多条件组合查询，条件间取交集</span>
-            <button className="case-search-reset-btn" onClick={onReset}>重置所有条件</button>
+            <div className="case-search-action-buttons">
+              {hasActiveFilters && (
+                <button
+                  className="case-view-save-btn-inline"
+                  onClick={() => setShowSaveDialog(true)}
+                >
+                  💾 保存为视图
+                </button>
+              )}
+              <button className="case-search-reset-btn" onClick={handleReset}>重置所有条件</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSaveDialog && (
+        <div className="modal-overlay" onClick={() => setShowSaveDialog(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3 className="modal-title">保存筛选视图</h3>
+            <p className="modal-desc">将当前设置的筛选条件保存为常用视图，下次可直接切换使用</p>
+            <label className="modal-field">
+              <span>视图名称</span>
+              <input
+                type="text"
+                placeholder="例如：高风险个案、危机预警中..."
+                value={newViewName}
+                onChange={e => setNewViewName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") handleSaveView();
+                }}
+                autoFocus
+              />
+            </label>
+            <div className="modal-filter-preview">
+              <p className="modal-preview-title">当前筛选条件：</p>
+              <div className="modal-preview-tags">
+                {filters.consultationTopic && <span className="filter-tag">主题：{filters.consultationTopic}</span>}
+                {filters.riskLevel && <span className="filter-tag">风险：{riskLevelLabels[filters.riskLevel as RiskLevel]}</span>}
+                {filters.crisisWarningStatus && <span className="filter-tag">预警：{crisisWarningStatusLabels[filters.crisisWarningStatus as CrisisWarningStatus]}</span>}
+                {filters.emotionalState && <span className="filter-tag">情绪：{filters.emotionalState}</span>}
+                {filters.intervention && <span className="filter-tag">干预：{filters.intervention}</span>}
+                {filters.nextGoal && <span className="filter-tag">目标：{filters.nextGoal}</span>}
+                {filters.keyword && <span className="filter-tag">关键词：{filters.keyword}</span>}
+                {filters.clientCode && <span className="filter-tag">代号：{filters.clientCode}</span>}
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button onClick={() => setShowSaveDialog(false)}>取消</button>
+              <button className="primary-action" onClick={handleSaveView}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showViewManager && (
+        <div className="modal-overlay" onClick={() => setShowViewManager(false)}>
+          <div className="modal-content wide" onClick={e => e.stopPropagation()}>
+            <h3 className="modal-title">管理筛选视图</h3>
+            {savedViews.length === 0 ? (
+              <p className="modal-empty">暂无已保存的视图</p>
+            ) : (
+              <div className="view-manager-list">
+                {savedViews.map(view => (
+                  <div key={view.id} className="view-manager-item">
+                    <div className="view-item-info">
+                      <div className="view-item-name">{view.name}</div>
+                      <div className="view-item-filters">
+                        {view.filters.consultationTopic && <span className="filter-tag small">主题：{view.filters.consultationTopic}</span>}
+                        {view.filters.riskLevel && <span className="filter-tag small">风险：{riskLevelLabels[view.filters.riskLevel as RiskLevel]}</span>}
+                        {view.filters.crisisWarningStatus && <span className="filter-tag small">预警：{crisisWarningStatusLabels[view.filters.crisisWarningStatus as CrisisWarningStatus]}</span>}
+                        {view.filters.keyword && <span className="filter-tag small">关键词：{view.filters.keyword}</span>}
+                        {view.filters.clientCode && <span className="filter-tag small">代号：{view.filters.clientCode}</span>}
+                      </div>
+                      <div className="view-item-date">
+                        创建于 {new Date(view.createdAt).toLocaleDateString("zh-CN")}
+                      </div>
+                    </div>
+                    <div className="view-item-actions">
+                      <button
+                        className="link"
+                        onClick={() => {
+                          applyView(view);
+                          setShowViewManager(false);
+                        }}
+                      >
+                        应用
+                      </button>
+                      <button
+                        className="link tl-btn-danger"
+                        onClick={() => handleDeleteView(view.id, view.name)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="modal-actions">
+              <button onClick={() => setShowViewManager(false)}>关闭</button>
+            </div>
           </div>
         </div>
       )}
@@ -3321,9 +3599,11 @@ function App() {
     clientCode: "",
     consultationTopic: "",
     riskLevel: "",
+    crisisWarningStatus: "",
     emotionalState: "",
     intervention: "",
     nextGoal: "",
+    keyword: "",
   });
   const toastIdRef = useRef(0);
   const isLoadedRef = useRef(false);
@@ -4208,8 +4488,9 @@ function App() {
   }, [caseRecords]);
 
   const hasCaseSearchFilters = caseSearchFilters.clientCode || caseSearchFilters.consultationTopic
-    || caseSearchFilters.riskLevel || caseSearchFilters.emotionalState
-    || caseSearchFilters.intervention || caseSearchFilters.nextGoal;
+    || caseSearchFilters.riskLevel || caseSearchFilters.crisisWarningStatus
+    || caseSearchFilters.emotionalState || caseSearchFilters.intervention
+    || caseSearchFilters.nextGoal || caseSearchFilters.keyword;
 
   const filteredCaseRecords = useMemo(() => {
     if (!hasCaseSearchFilters) return caseRecords;
@@ -4224,6 +4505,10 @@ function App() {
         const latestRisk = latestRiskByClient.get(record.clientCode);
         if (!latestRisk || latestRisk.level !== caseSearchFilters.riskLevel) return false;
       }
+      if (caseSearchFilters.crisisWarningStatus) {
+        const cwStatus = crisisWarningStats.byClient.get(record.clientCode);
+        if (!cwStatus || cwStatus !== caseSearchFilters.crisisWarningStatus) return false;
+      }
       if (caseSearchFilters.emotionalState) {
         if (record.emotionalState !== caseSearchFilters.emotionalState) return false;
       }
@@ -4233,18 +4518,30 @@ function App() {
       if (caseSearchFilters.nextGoal) {
         if (!record.nextGoal.toLowerCase().includes(caseSearchFilters.nextGoal.toLowerCase())) return false;
       }
+      if (caseSearchFilters.keyword) {
+        const keyword = caseSearchFilters.keyword.toLowerCase();
+        const matchesKeyword = 
+          record.mainConcern.toLowerCase().includes(keyword) ||
+          record.intervention.toLowerCase().includes(keyword) ||
+          record.nextGoal.toLowerCase().includes(keyword) ||
+          record.emotionalState.toLowerCase().includes(keyword) ||
+          record.consultationTopic.toLowerCase().includes(keyword);
+        if (!matchesKeyword) return false;
+      }
       return true;
     });
-  }, [caseRecords, caseSearchFilters, hasCaseSearchFilters, latestRiskByClient]);
+  }, [caseRecords, caseSearchFilters, hasCaseSearchFilters, latestRiskByClient, crisisWarningStats]);
 
   const resetCaseSearchFilters = useCallback(() => {
     setCaseSearchFilters({
       clientCode: "",
       consultationTopic: "",
       riskLevel: "",
+      crisisWarningStatus: "",
       emotionalState: "",
       intervention: "",
       nextGoal: "",
+      keyword: "",
     });
   }, []);
 
@@ -4614,6 +4911,7 @@ function App() {
                   allTopics={caseSearchOptions.topics}
                   allEmotionalStates={caseSearchOptions.emotionalStates}
                   allInterventions={caseSearchOptions.interventions}
+                  showToast={showToast}
                 />
 
                 <div className="record-list">

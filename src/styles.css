@@ -5151,3 +5151,361 @@ button:disabled {
   }
 }
 
+.case-views-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%);
+  border: 1px solid #ddd6fe;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.case-views-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #5b21b6;
+  white-space: nowrap;
+}
+
+.case-views-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.case-view-tab {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b7280;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.case-view-tab:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.case-view-tab.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
+}
+
+.case-views-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.case-view-save-btn,
+.case-view-manage-btn {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.case-view-save-btn {
+  background: var(--primary);
+  color: white;
+}
+
+.case-view-save-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.case-view-save-btn:disabled {
+  background: #d1d5db;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.case-view-manage-btn {
+  background: white;
+  color: #6b7280;
+  border-color: #e5e7eb;
+}
+
+.case-view-manage-btn:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+  color: #374151;
+}
+
+.case-views-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+
+.case-views-empty span {
+  font-size: 13px;
+  color: #854d0e;
+}
+
+.case-view-save-btn-inline {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.case-view-save-btn-inline:hover {
+  opacity: 0.9;
+}
+
+.case-search-action-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.modal-content.wide {
+  max-width: 700px;
+}
+
+.modal-title {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+  padding: 24px 24px 0;
+}
+
+.modal-desc {
+  margin: 0 0 20px 0;
+  font-size: 13px;
+  color: #64748b;
+  padding: 0 24px;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 24px;
+  margin-bottom: 16px;
+}
+
+.modal-field span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.modal-field input {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.modal-field input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+}
+
+.modal-filter-preview {
+  margin: 0 24px 20px;
+  padding: 14px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+.modal-preview-title {
+  margin: 0 0 10px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.modal-preview-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #475569;
+  font-weight: 500;
+}
+
+.filter-tag.small {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px 24px;
+}
+
+.modal-actions button {
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid var(--border);
+  background: white;
+  color: #64748b;
+}
+
+.modal-actions button:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.modal-actions .primary-action {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.modal-actions .primary-action:hover {
+  background: var(--primary);
+  opacity: 0.9;
+}
+
+.modal-empty {
+  text-align: center;
+  padding: 40px 24px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.view-manager-list {
+  padding: 0 24px 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.view-manager-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  transition: all 0.15s ease;
+}
+
+.view-manager-item:hover {
+  background: white;
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.view-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.view-item-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 4px;
+}
+
+.view-item-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.view-item-date {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.view-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.view-item-actions .link {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  min-height: auto;
+}
+
+@media (max-width: 768px) {
+  .case-views-bar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .case-views-tabs {
+    justify-content: flex-start;
+  }
+
+  .case-views-actions {
+    justify-content: flex-end;
+  }
+
+  .case-search-action-buttons {
+    flex-wrap: wrap;
+  }
+
+  .view-manager-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .view-item-actions {
+    align-self: flex-end;
+  }
+}
+
