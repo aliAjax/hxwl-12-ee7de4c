@@ -28,7 +28,7 @@ const ACTION_TYPES: AuditActionType[] = [
 
 const TARGET_TYPES: AuditTargetType[] = [
   "case_record", "timeline_record", "risk_assessment", "intervention_goal",
-  "supervision_record", "supervision_feedback", "export_summary",
+  "supervision_record", "supervision_feedback", "crisis_warning", "export_summary",
   "system", "audit_log", "user_session",
 ];
 

@@ -25,6 +25,8 @@ import {
   saveCounters,
   saveCaseRecord,
   deleteCaseRecord as dbDeleteCaseRecord,
+  saveCrisisWarning,
+  deleteCrisisWarning as dbDeleteCrisisWarning,
   getDBStatus,
   addDBListener,
   resetToSampleData,
@@ -144,6 +146,29 @@ export interface RiskAssessment {
   summary: string;
 }
 
+export type CrisisWarningStatus = "pending" | "confirmed" | "escalated" | "referred" | "closed";
+
+export interface CrisisWarningAction {
+  id: string;
+  fromStatus: CrisisWarningStatus;
+  toStatus: CrisisWarningStatus;
+  handler: string;
+  handledAt: string;
+  description: string;
+}
+
+export interface CrisisWarning {
+  id: string;
+  clientCode: string;
+  triggerType: "risk_assessment" | "case_record";
+  triggerId: string;
+  triggerReason: string;
+  status: CrisisWarningStatus;
+  createdAt: string;
+  updatedAt: string;
+  actions: CrisisWarningAction[];
+}
+
 export interface CaseRecord {
   id: string;
   clientCode: string;
@@ -237,6 +262,118 @@ const initialCaseRecords: CaseRecord[] = [
     updatedAt: "2026-06-11T09:00:00Z"
   }
 ];
+
+const CRISIS_KEYWORDS = ["自伤", "自杀", "自残", "失控", "轻生", "寻死", "不想活", "伤害自己", "结束生命", "崩溃"];
+
+function detectCrisisSignals(text: string): string[] {
+  if (!text) return [];
+  return CRISIS_KEYWORDS.filter(kw => text.includes(kw));
+}
+
+function shouldTriggerCrisisWarning(
+  riskLevel: RiskLevel,
+  textFields: string[]
+): { trigger: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (riskLevel === "high") {
+    reasons.push("风险等级评为高风险");
+  }
+  const allCrisisSignals: string[] = [];
+  for (const text of textFields) {
+    const signals = detectCrisisSignals(text);
+    allCrisisSignals.push(...signals);
+  }
+  const uniqueSignals = Array.from(new Set(allCrisisSignals));
+  if (uniqueSignals.length > 0) {
+    reasons.push(`录入内容包含危机信号：${uniqueSignals.join("、")}`);
+  }
+  return { trigger: reasons.length > 0, reasons };
+}
+
+const DEBOUNCE_WINDOW_MS = 30 * 60 * 1000;
+
+function isDuplicateWarning(
+  existingWarnings: CrisisWarning[],
+  clientCode: string,
+  now: number
+): boolean {
+  return existingWarnings.some(w => {
+    if (w.clientCode !== clientCode) return false;
+    if (w.status === "closed") return false;
+    const created = new Date(w.createdAt).getTime();
+    return now - created < DEBOUNCE_WINDOW_MS;
+  });
+}
+
+const crisisWarningStatusLabels: Record<CrisisWarningStatus, string> = {
+  pending: "待处理",
+  confirmed: "已确认",
+  escalated: "已升级",
+  referred: "已转介",
+  closed: "已关闭"
+};
+
+const crisisWarningStatusColors: Record<CrisisWarningStatus, string> = {
+  pending: "cw-status-pending",
+  confirmed: "cw-status-confirmed",
+  escalated: "cw-status-escalated",
+  referred: "cw-status-referred",
+  closed: "cw-status-closed"
+};
+
+const initialCrisisWarnings: CrisisWarning[] = [
+  {
+    id: "cw1",
+    clientCode: "C-042",
+    triggerType: "risk_assessment",
+    triggerId: "ra1",
+    triggerReason: "风险等级评为高风险；自伤维度得分较高(3分)，存在明确自伤风险表达",
+    status: "confirmed",
+    createdAt: "2026-06-10T10:30:00Z",
+    updatedAt: "2026-06-11T09:00:00Z",
+    actions: [
+      {
+        id: "cwa1",
+        fromStatus: "pending",
+        toStatus: "confirmed",
+        handler: "王督导",
+        handledAt: "2026-06-11T09:00:00Z",
+        description: "已确认风险属实，启动危机干预流程，联系来访者紧急联系人"
+      }
+    ]
+  },
+  {
+    id: "cw2",
+    clientCode: "C-042",
+    triggerType: "case_record",
+    triggerId: "cr1",
+    triggerReason: "录入内容包含危机信号：自伤（主要困扰提及工作压力导致持续性焦虑伴随失眠，有偶发无望感表达）",
+    status: "escalated",
+    createdAt: "2026-06-10T10:05:00Z",
+    updatedAt: "2026-06-12T14:00:00Z",
+    actions: [
+      {
+        id: "cwa2",
+        fromStatus: "pending",
+        toStatus: "confirmed",
+        handler: "李咨询师",
+        handledAt: "2026-06-10T11:00:00Z",
+        description: "已与来访者确认危机状况，制定安全计划"
+      },
+      {
+        id: "cwa3",
+        fromStatus: "confirmed",
+        toStatus: "escalated",
+        handler: "王督导",
+        handledAt: "2026-06-12T14:00:00Z",
+        description: "升级至机构危机干预小组，建议转介精神科评估"
+      }
+    ]
+  }
+];
+
+let nextCrisisWarningId = 3;
+let nextCrisisWarningActionId = 4;
 
 const initialTimelineData: TimelineRecord[] = [
   { id: "1", clientCode: "C-042", sessionDate: "2026-06-10", topic: "焦虑", emotionalState: "紧张不安", intervention: "呼吸放松训练", nextGoal: "觉察焦虑触发场景" },
@@ -611,12 +748,14 @@ function TimelineSection({
   onAddRecord,
   onUpdateRecord,
   onDeleteRecord,
+  crisisWarningByClient,
 }: {
   clientCodes: string[];
   records: TimelineRecord[];
   onAddRecord: (r: TimelineRecord) => void;
   onUpdateRecord: (r: TimelineRecord) => void;
   onDeleteRecord: (id: string) => void;
+  crisisWarningByClient: Map<string, CrisisWarningStatus>;
 }) {
   const [selectedClient, setSelectedClient] = useState<string>(clientCodes[0] || "C-042");
   const [editingRecord, setEditingRecord] = useState<TimelineRecord | null>(null);
@@ -766,6 +905,11 @@ function TimelineSection({
               <div className="tl-card-header">
                 <span className="tl-card-date">{record.sessionDate}</span>
                 <span className="tl-card-topic">{record.topic}</span>
+                {crisisWarningByClient.has(record.clientCode) && (
+                  <span className="cw-indicator-badge small">
+                    🚨 {crisisWarningStatusLabels[crisisWarningByClient.get(record.clientCode)!]}
+                  </span>
+                )}
               </div>
               <div className="tl-card-fields">
                 <div className="tl-field">
@@ -1320,6 +1464,361 @@ function GoalTrackingSection({
   );
 }
 
+const VALID_TRANSITIONS: Record<CrisisWarningStatus, CrisisWarningStatus[]> = {
+  pending: ["confirmed", "escalated", "referred", "closed"],
+  confirmed: ["escalated", "referred", "closed"],
+  escalated: ["referred", "closed"],
+  referred: ["closed"],
+  closed: [],
+};
+
+function CrisisWarningSection({
+  warnings,
+  onAddWarning,
+  onUpdateWarning,
+  onDeleteWarning,
+  allClientCodes,
+  role,
+}: {
+  warnings: CrisisWarning[];
+  onAddWarning: (w: CrisisWarning) => void;
+  onUpdateWarning: (w: CrisisWarning) => void;
+  onDeleteWarning: (id: string) => void;
+  allClientCodes: string[];
+  role: UserRole;
+}) {
+  const [statusFilter, setStatusFilter] = useState<CrisisWarningStatus | "all">("all");
+  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [selectedWarning, setSelectedWarning] = useState<CrisisWarning | null>(null);
+  const [isHandling, setIsHandling] = useState(false);
+  const [handleForm, setHandleForm] = useState<{
+    toStatus: CrisisWarningStatus;
+    handler: string;
+    description: string;
+  } | null>(null);
+
+  const availableClientCodes = useMemo(() => {
+    const codes = new Set([...allClientCodes, ...warnings.map(w => w.clientCode)]);
+    return Array.from(codes).sort();
+  }, [allClientCodes, warnings]);
+
+  const statusCounts = useMemo(() => {
+    const filtered = clientFilter === "all" ? warnings : warnings.filter(w => w.clientCode === clientFilter);
+    return {
+      all: filtered.length,
+      pending: filtered.filter(w => w.status === "pending").length,
+      confirmed: filtered.filter(w => w.status === "confirmed").length,
+      escalated: filtered.filter(w => w.status === "escalated").length,
+      referred: filtered.filter(w => w.status === "referred").length,
+      closed: filtered.filter(w => w.status === "closed").length,
+    };
+  }, [warnings, clientFilter]);
+
+  const filteredWarnings = useMemo(() => {
+    let result = warnings;
+    if (clientFilter !== "all") {
+      result = result.filter(w => w.clientCode === clientFilter);
+    }
+    if (statusFilter !== "all") {
+      result = result.filter(w => w.status === statusFilter);
+    }
+    return result.sort((a, b) => {
+      const statusOrder: Record<CrisisWarningStatus, number> = { pending: 0, confirmed: 1, escalated: 2, referred: 3, closed: 4 };
+      if (statusOrder[a.status] !== statusOrder[b.status]) return statusOrder[a.status] - statusOrder[b.status];
+      return b.createdAt.localeCompare(a.createdAt);
+    });
+  }, [warnings, statusFilter, clientFilter]);
+
+  useEffect(() => {
+    if (selectedWarning) {
+      const latest = warnings.find(w => w.id === selectedWarning.id);
+      if (latest && JSON.stringify(latest) !== JSON.stringify(selectedWarning)) {
+        setSelectedWarning(latest);
+      }
+    }
+  }, [warnings, selectedWarning]);
+
+  const openHandleForm = (warning: CrisisWarning, toStatus: CrisisWarningStatus) => {
+    setHandleForm({
+      toStatus,
+      handler: role === "supervisor" ? "王督导" : "李咨询师",
+      description: "",
+    });
+    setIsHandling(true);
+  };
+
+  const submitHandle = () => {
+    if (!handleForm || !selectedWarning) return;
+    if (!handleForm.handler || !handleForm.description) return;
+    const action: CrisisWarningAction = {
+      id: "cwa" + nextCrisisWarningActionId++,
+      fromStatus: selectedWarning.status,
+      toStatus: handleForm.toStatus,
+      handler: handleForm.handler,
+      handledAt: new Date().toISOString(),
+      description: handleForm.description,
+    };
+    const updated: CrisisWarning = {
+      ...selectedWarning,
+      status: handleForm.toStatus,
+      actions: [...selectedWarning.actions, action],
+      updatedAt: new Date().toISOString(),
+    };
+    onUpdateWarning(updated);
+    setSelectedWarning(updated);
+    setIsHandling(false);
+    setHandleForm(null);
+  };
+
+  const cancelHandle = () => {
+    setIsHandling(false);
+    setHandleForm(null);
+  };
+
+  if (selectedWarning && !isHandling) {
+    const canTransition = VALID_TRANSITIONS[selectedWarning.status];
+    return (
+      <section className="records panel">
+        <div className="section-heading">
+          <div>
+            <p>危机预警闭环</p>
+            <h2>{selectedWarning.clientCode} — 预警详情</h2>
+          </div>
+          <button onClick={() => setSelectedWarning(null)}>返回列表</button>
+        </div>
+
+        <div className="cw-detail-header">
+          <span className={`cw-status-badge ${crisisWarningStatusColors[selectedWarning.status]}`}>
+            {crisisWarningStatusLabels[selectedWarning.status]}
+          </span>
+          <span className="cw-detail-trigger-type">
+            {selectedWarning.triggerType === "risk_assessment" ? "风险评估触发" : "个案记录触发"}
+          </span>
+          <span className="cw-detail-time">
+            创建于 {new Date(selectedWarning.createdAt).toLocaleString()}
+          </span>
+        </div>
+
+        <div className="cw-detail-info">
+          <div className="cw-info-section">
+            <h4>触发原因</h4>
+            <p className="cw-reason-text">{selectedWarning.triggerReason}</p>
+          </div>
+        </div>
+
+        {canTransition.length > 0 && (
+          <div className="cw-action-bar">
+            <span className="cw-action-label">状态操作：</span>
+            {canTransition.map(target => (
+              <button
+                key={target}
+                className={`cw-action-btn ${crisisWarningStatusColors[target]}`}
+                onClick={() => openHandleForm(selectedWarning, target)}
+              >
+                {crisisWarningStatusLabels[target]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedWarning.actions.length > 0 && (
+          <div className="cw-action-timeline">
+            <h4>处理记录</h4>
+            <div className="cw-action-list">
+              {[...selectedWarning.actions].reverse().map(action => (
+                <div key={action.id} className="cw-action-item">
+                  <div className="cw-action-connector">
+                    <span className={`cw-action-dot ${crisisWarningStatusColors[action.toStatus]}`} />
+                  </div>
+                  <div className="cw-action-body">
+                    <div className="cw-action-header">
+                      <span className={`cw-status-badge small ${crisisWarningStatusColors[action.fromStatus]}`}>
+                        {crisisWarningStatusLabels[action.fromStatus]}
+                      </span>
+                      <span className="cw-action-arrow">→</span>
+                      <span className={`cw-status-badge small ${crisisWarningStatusColors[action.toStatus]}`}>
+                        {crisisWarningStatusLabels[action.toStatus]}
+                      </span>
+                      <span className="cw-action-handler">处理人：{action.handler}</span>
+                    </div>
+                    <p className="cw-action-desc">{action.description}</p>
+                    <span className="cw-action-time">
+                      {new Date(action.handledAt).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </section>
+    );
+  }
+
+  if (isHandling && handleForm && selectedWarning) {
+    return (
+      <section className="records panel">
+        <div className="section-heading">
+          <div>
+            <p>危机预警闭环</p>
+            <h2>处理预警 — {selectedWarning.clientCode}</h2>
+          </div>
+          <button onClick={cancelHandle}>返回详情</button>
+        </div>
+
+        <div className="cw-handle-form">
+          <div className="cw-handle-info">
+            <div className="cw-handle-transition">
+              <span className={`cw-status-badge ${crisisWarningStatusColors[selectedWarning.status]}`}>
+                {crisisWarningStatusLabels[selectedWarning.status]}
+              </span>
+              <span className="cw-action-arrow">→</span>
+              <span className={`cw-status-badge ${crisisWarningStatusColors[handleForm.toStatus]}`}>
+                {crisisWarningStatusLabels[handleForm.toStatus]}
+              </span>
+            </div>
+            <p className="cw-handle-reason">触发原因：{selectedWarning.triggerReason}</p>
+          </div>
+
+          <div className="cw-handle-fields">
+            <label>
+              <span>处理人 *</span>
+              <input
+                value={handleForm.handler}
+                onChange={e => setHandleForm({ ...handleForm, handler: e.target.value })}
+                placeholder="填写处理人姓名"
+              />
+            </label>
+            <label className="tl-form-full">
+              <span>处理说明 *</span>
+              <textarea
+                value={handleForm.description}
+                onChange={e => setHandleForm({ ...handleForm, description: e.target.value })}
+                placeholder="描述处理情况、采取的措施和后续安排"
+                rows={4}
+              />
+            </label>
+          </div>
+
+          <div className="tl-form-actions">
+            <button onClick={cancelHandle}>取消</button>
+            <button className="primary-action" onClick={submitHandle}>确认处理</button>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="records panel">
+      <div className="section-heading">
+        <div>
+          <p>危机预警闭环</p>
+          <h2>预警看板</h2>
+          <p className="section-subtitle">
+            高风险评估或危机信号自动触发预警 · 同一个个案30分钟内不重复触发
+          </p>
+        </div>
+      </div>
+
+      <div className="cw-kanban-metrics">
+        <div className="cw-kanban-metric cw-metric-pending">
+          <span className="cw-kanban-value">{statusCounts.pending}</span>
+          <span className="cw-kanban-label">待处理</span>
+        </div>
+        <div className="cw-kanban-metric cw-metric-confirmed">
+          <span className="cw-kanban-value">{statusCounts.confirmed}</span>
+          <span className="cw-kanban-label">已确认</span>
+        </div>
+        <div className="cw-kanban-metric cw-metric-escalated">
+          <span className="cw-kanban-value">{statusCounts.escalated}</span>
+          <span className="cw-kanban-label">已升级</span>
+        </div>
+        <div className="cw-kanban-metric cw-metric-referred">
+          <span className="cw-kanban-value">{statusCounts.referred}</span>
+          <span className="cw-kanban-label">已转介</span>
+        </div>
+        <div className="cw-kanban-metric cw-metric-closed">
+          <span className="cw-kanban-value">{statusCounts.closed}</span>
+          <span className="cw-kanban-label">已关闭</span>
+        </div>
+      </div>
+
+      <div className="cw-filters">
+        <div className="cw-status-tabs">
+          {(["all", "pending", "confirmed", "escalated", "referred", "closed"] as const).map(s => (
+            <button
+              key={s}
+              className={`cw-status-tab ${statusFilter === s ? "active" : ""} ${s !== "all" ? crisisWarningStatusColors[s] : ""}`}
+              onClick={() => setStatusFilter(s)}
+            >
+              {s === "all" ? "全部" : crisisWarningStatusLabels[s]}
+              <span className="cw-status-count">{statusCounts[s]}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="cw-client-filter">
+          <select
+            value={clientFilter}
+            onChange={e => setClientFilter(e.target.value)}
+          >
+            <option value="all">全部来访者</option>
+            {availableClientCodes.map(code => (
+              <option key={code} value={code}>{code}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="cw-warning-list">
+        {filteredWarnings.length === 0 && (
+          <p className="tl-empty">暂无危机预警记录</p>
+        )}
+        {filteredWarnings.map(warning => (
+          <article
+            key={warning.id}
+            className={`cw-warning-card ${warning.status === "pending" ? "cw-card-pulse" : ""}`}
+            onClick={() => setSelectedWarning(warning)}
+          >
+            <div className="cw-card-left">
+              <div className="cw-card-header">
+                <h3 className="cw-card-client">{warning.clientCode}</h3>
+                <span className={`cw-status-badge ${crisisWarningStatusColors[warning.status]}`}>
+                  {crisisWarningStatusLabels[warning.status]}
+                </span>
+              </div>
+              <p className="cw-card-reason">
+                {warning.triggerReason.length > 80
+                  ? warning.triggerReason.slice(0, 80) + "…"
+                  : warning.triggerReason}
+              </p>
+              <div className="cw-card-meta">
+                <span className="cw-card-trigger">
+                  {warning.triggerType === "risk_assessment" ? "⚠️ 风险评估" : "📝 个案记录"}
+                </span>
+                <span className="cw-card-time">
+                  {new Date(warning.createdAt).toLocaleString()}
+                </span>
+              </div>
+            </div>
+            <div className="cw-card-right">
+              <div className="cw-card-actions-count">
+                {warning.actions.length} 次处理
+              </div>
+              {warning.actions.length > 0 && (
+                <span className="cw-card-last-handler">
+                  最近：{warning.actions[warning.actions.length - 1].handler}
+                </span>
+              )}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function SupervisionWorkbench({
   records,
   role,
@@ -1328,7 +1827,8 @@ function SupervisionWorkbench({
   onUpdateRecord,
   onSubmitForSupervision,
   onSaveDraft,
-  onAddFeedback
+  onAddFeedback,
+  crisisWarningByClient
 }: {
   records: SupervisionRecord[];
   role: UserRole;
@@ -1338,6 +1838,7 @@ function SupervisionWorkbench({
   onSubmitForSupervision: (record: SupervisionRecord) => void;
   onSaveDraft: (record: SupervisionRecord) => void;
   onAddFeedback: (recordId: string, feedback: SupervisionFeedback) => void;
+  crisisWarningByClient: Map<string, CrisisWarningStatus>;
 }) {
   const [selectedRecord, setSelectedRecord] = useState<SupervisionRecord | null>(null);
   const [statusFilter, setStatusFilter] = useState<SupervisionStatus | "all">(role === "supervisor" ? "pending" : "all");
@@ -2005,6 +2506,11 @@ function SupervisionWorkbench({
                 <span className={`sup-status-badge ${supervisionStatusColors[record.status]}`}>
                   {supervisionStatusLabels[record.status]}
                 </span>
+                {crisisWarningByClient.has(record.clientCode) && (
+                  <span className="cw-indicator-badge">
+                    🚨 {crisisWarningStatusLabels[crisisWarningByClient.get(record.clientCode)!]}
+                  </span>
+                )}
               </div>
               <p className="sup-record-topic">{record.consultationTopic}</p>
               <p className="sup-record-summary">
@@ -2793,7 +3299,7 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
   );
 }
 
-type AppTab = "caseRecords" | "timeline" | "risk" | "goals" | "supervision" | "export" | "audit";
+type AppTab = "caseRecords" | "timeline" | "risk" | "goals" | "crisisWarning" | "supervision" | "export" | "audit";
 
 function App() {
   const { currentRole, switchRole, session, hasPermission: hasPerm, assertPermission: assertPerm } = useAuth();
@@ -2803,6 +3309,7 @@ function App() {
   const [goals, setGoals] = useState<InterventionGoal[]>(initialGoals);
   const [caseRecords, setCaseRecords] = useState<CaseRecord[]>(initialCaseRecords);
   const [supervisionRecords, setSupervisionRecords] = useState<SupervisionRecord[]>(initialSupervisionRecords);
+  const [crisisWarnings, setCrisisWarnings] = useState<CrisisWarning[]>(initialCrisisWarnings);
   const [isLoading, setIsLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dbStatus, setDbStatus] = useState<DBStatus>({ isSupported: true, isConnected: false, version: 0 });
@@ -2895,20 +3402,24 @@ function App() {
           initialRiskAssessments,
           initialGoals,
           initialCaseRecords,
+          initialCrisisWarnings,
           nextTimelineId,
           nextRiskId,
           nextGoalId,
-          nextCaseRecordId
+          nextCaseRecordId,
+          nextCrisisWarningId
         );
         if (cancelled) return;
         setTimeline(data.timeline);
         setAssessments(data.riskAssessments);
         setGoals(data.goals);
         setCaseRecords(data.caseRecords);
+        setCrisisWarnings(data.crisisWarnings);
         nextTimelineId = data.nextTimelineId;
         nextRiskId = data.nextRiskId;
         nextGoalId = data.nextGoalId;
         nextCaseRecordId = data.nextCaseRecordId;
+        nextCrisisWarningId = data.nextCrisisWarningId;
         isLoadedRef.current = true;
         setIsLoading(false);
         showToast("个案档案数据加载完成", "success");
@@ -3001,9 +3512,27 @@ function App() {
 
   const persistCounters = useCallback(async () => {
     try {
-      await saveCounters(nextTimelineId, nextRiskId, nextGoalId, nextCaseRecordId);
+      await saveCounters(nextTimelineId, nextRiskId, nextGoalId, nextCaseRecordId, nextCrisisWarningId);
     } catch (err) {
       console.error("[DB] 保存计数器失败:", err);
+    }
+  }, [showToast]);
+
+  const persistCrisisWarning = useCallback(async (w: CrisisWarning) => {
+    try {
+      await saveCrisisWarning(w);
+    } catch (err) {
+      console.error("[DB] 保存危机预警失败:", err);
+      showToast("危机预警数据保存失败");
+    }
+  }, [showToast]);
+
+  const persistCrisisWarningDelete = useCallback(async (id: string) => {
+    try {
+      await dbDeleteCrisisWarning(id);
+    } catch (err) {
+      console.error("[DB] 删除危机预警失败:", err);
+      showToast("删除危机预警记录失败");
     }
   }, [showToast]);
 
@@ -3030,19 +3559,23 @@ function App() {
         initialRiskAssessments,
         initialGoals,
         initialCaseRecords,
+        initialCrisisWarnings,
         7,
         4,
         7,
-        4
+        4,
+        3
       );
       setTimeline(data.timeline);
       setAssessments(data.riskAssessments);
       setGoals(data.goals);
       setCaseRecords(data.caseRecords);
+      setCrisisWarnings(data.crisisWarnings);
       nextTimelineId = data.nextTimelineId;
       nextRiskId = data.nextRiskId;
       nextGoalId = data.nextGoalId;
       nextCaseRecordId = data.nextCaseRecordId;
+      nextCrisisWarningId = data.nextCrisisWarningId;
       createAudit({
         action: "system_reset",
         targetType: "system",
@@ -3150,10 +3683,40 @@ function App() {
         message: "个案记录已创建",
       });
     }
+    const savedRecord = finalRecord.id ? finalRecord : { ...finalRecord, id: "cr" + (nextCaseRecordId - 1), createdAt: now };
+    const latestRisk = assessments
+      .filter(a => a.clientCode === savedRecord.clientCode)
+      .sort((a, b) => b.assessDate.localeCompare(a.assessDate))[0];
+    const currentRiskLevel = latestRisk?.level || "stable";
+    const { trigger, reasons } = shouldTriggerCrisisWarning(
+      currentRiskLevel,
+      [savedRecord.mainConcern, savedRecord.intervention, savedRecord.nextGoal]
+    );
+    if (trigger) {
+      setCrisisWarnings(prev => {
+        if (isDuplicateWarning(prev, savedRecord.clientCode, Date.now())) return prev;
+        const warningNow = new Date().toISOString();
+        const warning: CrisisWarning = {
+          id: "cw" + nextCrisisWarningId++,
+          clientCode: savedRecord.clientCode,
+          triggerType: "case_record",
+          triggerId: savedRecord.id,
+          triggerReason: reasons.join("；"),
+          status: "pending",
+          createdAt: warningNow,
+          updatedAt: warningNow,
+          actions: [],
+        };
+        persistCrisisWarning(warning);
+        persistCounters();
+        showToast(`已自动创建危机预警：${savedRecord.clientCode}`, "info");
+        return [...prev, warning];
+      });
+    }
     setIsCaseFormOpen(false);
     setEditingCaseRecord(null);
     showToast("个案记录已保存", "success");
-  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit]);
+  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit, persistCrisisWarning, assessments]);
 
   const handleDeleteCaseRecord = useCallback((id: string) => {
     try {
@@ -3271,7 +3834,29 @@ function App() {
       details: { level: a.level },
       message: "风险评估已创建",
     });
-  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit]);
+    const { trigger, reasons } = shouldTriggerCrisisWarning(a.level, [a.summary]);
+    if (trigger) {
+      setCrisisWarnings(prev => {
+        if (isDuplicateWarning(prev, a.clientCode, Date.now())) return prev;
+        const now = new Date().toISOString();
+        const warning: CrisisWarning = {
+          id: "cw" + nextCrisisWarningId++,
+          clientCode: a.clientCode,
+          triggerType: "risk_assessment",
+          triggerId: a.id,
+          triggerReason: reasons.join("；"),
+          status: "pending",
+          createdAt: now,
+          updatedAt: now,
+          actions: [],
+        };
+        persistCrisisWarning(warning);
+        persistCounters();
+        showToast(`已自动创建危机预警：${a.clientCode}`, "info");
+        return [...prev, warning];
+      });
+    }
+  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit, persistCrisisWarning]);
 
   const handleDeleteAssessment = useCallback((id: string) => {
     try {
@@ -3468,6 +4053,49 @@ function App() {
     showToast("督导意见已提交", "success");
   }, [showToast, supervisionRecords, assertPerm, createAudit]);
 
+  const handleAddCrisisWarning = useCallback((w: CrisisWarning) => {
+    setCrisisWarnings(prev => [...prev, w]);
+    persistCrisisWarning(w);
+    persistCounters();
+    createAudit({
+      action: "create",
+      targetType: "crisis_warning",
+      targetId: w.id,
+      targetLabel: w.clientCode,
+      status: "success",
+      message: "危机预警已自动创建",
+    });
+  }, [persistCrisisWarning, persistCounters, createAudit]);
+
+  const handleUpdateCrisisWarning = useCallback((w: CrisisWarning) => {
+    setCrisisWarnings(prev => prev.map(item => item.id === w.id ? w : item));
+    persistCrisisWarning(w);
+    createAudit({
+      action: "update",
+      targetType: "crisis_warning",
+      targetId: w.id,
+      targetLabel: w.clientCode,
+      status: "success",
+      details: { status: w.status },
+      message: `危机预警状态更新为${crisisWarningStatusLabels[w.status]}`,
+    });
+    showToast(`预警状态已更新为${crisisWarningStatusLabels[w.status]}`, "success");
+  }, [persistCrisisWarning, createAudit, showToast]);
+
+  const handleDeleteCrisisWarning = useCallback((id: string) => {
+    const w = crisisWarnings.find(x => x.id === id);
+    setCrisisWarnings(prev => prev.filter(x => x.id !== id));
+    persistCrisisWarningDelete(id);
+    createAudit({
+      action: "delete",
+      targetType: "crisis_warning",
+      targetId: id,
+      targetLabel: w?.clientCode,
+      status: "success",
+      message: "危机预警已删除",
+    });
+  }, [persistCrisisWarningDelete, crisisWarnings, createAudit]);
+
   const handleRoleChange = useCallback((role: UserRole) => {
     switchRole(role);
   }, [switchRole]);
@@ -3553,6 +4181,19 @@ function App() {
       goalProgressCount
     ];
   }, [activeClientCodes.length, highRiskCount, mediumRiskCount, thisWeekSessionCount, goalProgressCount]);
+
+  const crisisWarningStats = useMemo(() => {
+    const pending = crisisWarnings.filter(w => w.status === "pending").length;
+    const openWarnings = crisisWarnings.filter(w => w.status !== "closed").length;
+    const byClient = new Map<string, CrisisWarningStatus>();
+    crisisWarnings.filter(w => w.status !== "closed").forEach(w => {
+      const existing = byClient.get(w.clientCode);
+      if (!existing) {
+        byClient.set(w.clientCode, w.status);
+      }
+    });
+    return { pending, openWarnings, byClient };
+  }, [crisisWarnings]);
 
   const latestRiskByClient = useMemo(() => {
     const map = new Map<string, RiskAssessment>();
@@ -3701,6 +4342,24 @@ function App() {
               <strong className="risk-dist-count">{stableRiskCount}</strong>
             </div>
           </div>
+          <h2>危机预警</h2>
+          <div className="cw-sidebar-summary">
+            <div className={`cw-sidebar-alert ${crisisWarningStats.pending > 0 ? "cw-alert-active" : ""}`}>
+              <span className="cw-sidebar-alert-icon">🚨</span>
+              <strong className="cw-sidebar-alert-count">{crisisWarningStats.pending}</strong>
+              <span className="cw-sidebar-alert-label">待处理</span>
+            </div>
+            <div className="cw-sidebar-stats">
+              <div className="cw-sidebar-stat">
+                <span className="cw-sidebar-stat-label">活跃预警</span>
+                <strong className="cw-sidebar-stat-value">{crisisWarningStats.openWarnings}</strong>
+              </div>
+              <div className="cw-sidebar-stat">
+                <span className="cw-sidebar-stat-label">涉及个案</span>
+                <strong className="cw-sidebar-stat-value">{crisisWarningStats.byClient.size}</strong>
+              </div>
+            </div>
+          </div>
           <h2>离线存储</h2>
           <div className="db-status-section">
             <span className={`db-status-dot ${dbStatus.isConnected ? 'db-status-online' : 'db-status-offline'}`} />
@@ -3728,6 +4387,10 @@ function App() {
             <div className="db-stat-item">
               <span className="db-stat-label">干预目标</span>
               <strong className="db-stat-value">{goals.length}</strong>
+            </div>
+            <div className="db-stat-item">
+              <span className="db-stat-label">危机预警</span>
+              <strong className="db-stat-value">{crisisWarnings.length}</strong>
             </div>
           </div>
           {showDBUpgradeNotice && (
@@ -3801,6 +4464,16 @@ function App() {
                     🏢 督导工作台
                   </button>
                 </ProtectedMenu>
+                <button
+                  className={`role-chip ${activeTab === "crisisWarning" ? "active" : ""}`}
+                  onClick={() => setActiveTab("crisisWarning")}
+                  style={{ marginBottom: -1, borderRadius: "8px 8px 0 0" }}
+                >
+                  🚨 危机预警
+                  {crisisWarningStats.pending > 0 && (
+                    <span className="cw-tab-badge">{crisisWarningStats.pending}</span>
+                  )}
+                </button>
                 <ProtectedMenu menu="menu.export">
                   <button
                     className={`role-chip ${activeTab === "export" ? "active" : ""}`}
@@ -3979,6 +4652,11 @@ function App() {
                                   {riskLevelLabels[riskInfo.level]}
                                 </span>
                               )}
+                              {crisisWarningStats.byClient.has(record.clientCode) && (
+                                <span className="cw-indicator-badge">
+                                  🚨 {crisisWarningStatusLabels[crisisWarningStats.byClient.get(record.clientCode)!]}
+                                </span>
+                              )}
                             </div>
                             <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
                             <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
@@ -4048,8 +4726,20 @@ function App() {
                     onAddRecord={handleAddTimeline}
                     onUpdateRecord={handleUpdateTimeline}
                     onDeleteRecord={handleDeleteTimeline}
+                    crisisWarningByClient={crisisWarningStats.byClient}
                   />
                 </ProtectedMenu>
+              )}
+
+              {activeTab === "crisisWarning" && (
+                <CrisisWarningSection
+                  warnings={crisisWarnings}
+                  onAddWarning={handleAddCrisisWarning}
+                  onUpdateWarning={handleUpdateCrisisWarning}
+                  onDeleteWarning={handleDeleteCrisisWarning}
+                  allClientCodes={activeClientCodes}
+                  role={currentRole}
+                />
               )}
 
               {activeTab === "supervision" && (
@@ -4063,6 +4753,7 @@ function App() {
                     onSubmitForSupervision={handleSubmitForSupervision}
                     onSaveDraft={handleSaveDraft}
                     onAddFeedback={handleAddFeedback}
+                    crisisWarningByClient={crisisWarningStats.byClient}
                   />
                 </ProtectedMenu>
               )}

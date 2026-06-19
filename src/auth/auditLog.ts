@@ -20,6 +20,7 @@ export type AuditTargetType =
   | "intervention_goal"
   | "supervision_record"
   | "supervision_feedback"
+  | "crisis_warning"
   | "export_summary"
   | "system"
   | "audit_log"
@@ -329,6 +330,7 @@ export const AUDIT_TARGET_LABELS: Record<AuditTargetType, string> = {
   intervention_goal: "干预目标",
   supervision_record: "督导申请",
   supervision_feedback: "督导反馈",
+  crisis_warning: "危机预警",
   export_summary: "导出摘要",
   system: "系统",
   audit_log: "审计日志",

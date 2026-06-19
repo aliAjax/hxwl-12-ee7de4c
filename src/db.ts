@@ -1,13 +1,14 @@
-import type { TimelineRecord, RiskAssessment, InterventionGoal, CaseRecord } from "./App";
+import type { TimelineRecord, RiskAssessment, InterventionGoal, CaseRecord, CrisisWarning } from "./App";
 
 const DB_NAME = "hxwl12_case_archive";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 const STORES = {
   timeline: "timeline",
   riskAssessments: "risk_assessments",
   goals: "goals",
   caseRecords: "case_records",
+  crisisWarnings: "crisis_warnings",
   meta: "meta",
 } as const;
 
@@ -18,10 +19,12 @@ export interface AppData {
   riskAssessments: RiskAssessment[];
   goals: InterventionGoal[];
   caseRecords: CaseRecord[];
+  crisisWarnings: CrisisWarning[];
   nextTimelineId: number;
   nextRiskId: number;
   nextGoalId: number;
   nextCaseRecordId: number;
+  nextCrisisWarningId: number;
 }
 
 export interface DBStatus {
@@ -97,6 +100,15 @@ function openDB(): Promise<IDBDatabase> {
           }
           if (!db.objectStoreNames.contains(STORES.meta)) {
             db.createObjectStore(STORES.meta, { keyPath: "key" });
+          }
+        }
+
+        if (oldVersion < 3) {
+          if (!db.objectStoreNames.contains(STORES.crisisWarnings)) {
+            const cwStore = db.createObjectStore(STORES.crisisWarnings, { keyPath: "id" });
+            cwStore.createIndex("clientCode", "clientCode", { unique: false });
+            cwStore.createIndex("status", "status", { unique: false });
+            cwStore.createIndex("createdAt", "createdAt", { unique: false });
           }
         }
 
@@ -261,19 +273,22 @@ export async function loadAllData(
   sampleRisk: RiskAssessment[],
   sampleGoals: InterventionGoal[],
   sampleCaseRecords: CaseRecord[],
+  sampleCrisisWarnings: CrisisWarning[],
   sampleNextTimelineId: number,
   sampleNextRiskId: number,
   sampleNextGoalId: number,
-  sampleNextCaseRecordId: number
+  sampleNextCaseRecordId: number,
+  sampleNextCrisisWarningId: number
 ): Promise<AppData> {
   const db = await openDB();
 
   try {
-    const [timeline, riskAssessments, goals, caseRecords, seeded] = await Promise.all([
+    const [timeline, riskAssessments, goals, caseRecords, crisisWarnings, seeded] = await Promise.all([
       getAllFromStore<TimelineRecord>(db, STORES.timeline),
       getAllFromStore<RiskAssessment>(db, STORES.riskAssessments),
       getAllFromStore<InterventionGoal>(db, STORES.goals),
       getAllFromStore<CaseRecord>(db, STORES.caseRecords),
+      getAllFromStore<CrisisWarning>(db, STORES.crisisWarnings),
       getMeta<boolean>(db, "seeded"),
     ]);
 
@@ -288,10 +303,12 @@ export async function loadAllData(
         sampleRisk,
         sampleGoals,
         sampleCaseRecords,
+        sampleCrisisWarnings,
         sampleNextTimelineId,
         sampleNextRiskId,
         sampleNextGoalId,
-        sampleNextCaseRecordId
+        sampleNextCaseRecordId,
+        sampleNextCrisisWarningId
       );
       await setMeta(db, "seeded", true);
       await setMeta(db, "seededAt", new Date().toISOString());
@@ -301,18 +318,21 @@ export async function loadAllData(
         riskAssessments: sampleRisk,
         goals: sampleGoals,
         caseRecords: sampleCaseRecords,
+        crisisWarnings: sampleCrisisWarnings,
         nextTimelineId: sampleNextTimelineId,
         nextRiskId: sampleNextRiskId,
         nextGoalId: sampleNextGoalId,
         nextCaseRecordId: sampleNextCaseRecordId,
+        nextCrisisWarningId: sampleNextCrisisWarningId,
       };
     }
 
-    const [nextTimelineId, nextRiskId, nextGoalId, nextCaseRecordId] = await Promise.all([
+    const [nextTimelineId, nextRiskId, nextGoalId, nextCaseRecordId, nextCrisisWarningId] = await Promise.all([
       getMeta<number>(db, "nextTimelineId"),
       getMeta<number>(db, "nextRiskId"),
       getMeta<number>(db, "nextGoalId"),
       getMeta<number>(db, "nextCaseRecordId"),
+      getMeta<number>(db, "nextCrisisWarningId"),
     ]);
 
     db.close();
@@ -321,10 +341,12 @@ export async function loadAllData(
       riskAssessments,
       goals,
       caseRecords,
+      crisisWarnings,
       nextTimelineId: nextTimelineId ?? sampleNextTimelineId,
       nextRiskId: nextRiskId ?? sampleNextRiskId,
       nextGoalId: nextGoalId ?? sampleNextGoalId,
       nextCaseRecordId: nextCaseRecordId ?? sampleNextCaseRecordId,
+      nextCrisisWarningId: nextCrisisWarningId ?? sampleNextCrisisWarningId,
     };
   } catch (e) {
     db.close();
@@ -338,13 +360,15 @@ async function seedSampleData(
   risk: RiskAssessment[],
   goals: InterventionGoal[],
   caseRecords: CaseRecord[],
+  crisisWarnings: CrisisWarning[],
   nextTimelineId: number,
   nextRiskId: number,
   nextGoalId: number,
-  nextCaseRecordId: number
+  nextCaseRecordId: number,
+  nextCrisisWarningId: number
 ): Promise<void> {
   const tx = db.transaction(
-    [STORES.timeline, STORES.riskAssessments, STORES.goals, STORES.caseRecords, STORES.meta],
+    [STORES.timeline, STORES.riskAssessments, STORES.goals, STORES.caseRecords, STORES.crisisWarnings, STORES.meta],
     "readwrite"
   );
 
@@ -360,11 +384,15 @@ async function seedSampleData(
   const caseStore = tx.objectStore(STORES.caseRecords);
   caseRecords.forEach(c => caseStore.put(c));
 
+  const cwStore = tx.objectStore(STORES.crisisWarnings);
+  crisisWarnings.forEach(c => cwStore.put(c));
+
   const metaStore = tx.objectStore(STORES.meta);
   metaStore.put({ key: "nextTimelineId", value: nextTimelineId });
   metaStore.put({ key: "nextRiskId", value: nextRiskId });
   metaStore.put({ key: "nextGoalId", value: nextGoalId });
   metaStore.put({ key: "nextCaseRecordId", value: nextCaseRecordId });
+  metaStore.put({ key: "nextCrisisWarningId", value: nextCrisisWarningId });
   metaStore.put({ key: "seeded", value: true });
   metaStore.put({ key: "seededAt", value: new Date().toISOString() });
   metaStore.put({ key: "dbVersion", value: DB_VERSION });
@@ -493,11 +521,42 @@ export async function deleteCaseRecord(id: string): Promise<void> {
   }
 }
 
+export async function saveCrisisWarning(warning: CrisisWarning): Promise<void> {
+  const db = await openDB();
+  try {
+    await putToStore(db, STORES.crisisWarnings, warning);
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveCrisisWarnings(warnings: CrisisWarning[]): Promise<void> {
+  const db = await openDB();
+  try {
+    const tx = db.transaction(STORES.crisisWarnings, "readwrite");
+    const store = tx.objectStore(STORES.crisisWarnings);
+    warnings.forEach(w => store.put(w));
+    await promisifyTransaction(tx);
+  } finally {
+    db.close();
+  }
+}
+
+export async function deleteCrisisWarning(id: string): Promise<void> {
+  const db = await openDB();
+  try {
+    await deleteFromStore(db, STORES.crisisWarnings, id);
+  } finally {
+    db.close();
+  }
+}
+
 export async function saveCounters(
   nextTimelineId: number,
   nextRiskId: number,
   nextGoalId: number,
-  nextCaseRecordId: number
+  nextCaseRecordId: number,
+  nextCrisisWarningId: number
 ): Promise<void> {
   const db = await openDB();
   try {
@@ -507,6 +566,7 @@ export async function saveCounters(
     store.put({ key: "nextRiskId", value: nextRiskId });
     store.put({ key: "nextGoalId", value: nextGoalId });
     store.put({ key: "nextCaseRecordId", value: nextCaseRecordId });
+    store.put({ key: "nextCrisisWarningId", value: nextCrisisWarningId });
     await promisifyTransaction(tx);
   } finally {
     db.close();
@@ -517,10 +577,10 @@ export async function clearAllData(): Promise<void> {
   const db = await openDB();
   try {
     const tx = db.transaction(
-      [STORES.timeline, STORES.riskAssessments, STORES.goals, STORES.caseRecords, STORES.meta],
+      [STORES.timeline, STORES.riskAssessments, STORES.goals, STORES.caseRecords, STORES.crisisWarnings, STORES.meta],
       "readwrite"
     );
-    [STORES.timeline, STORES.riskAssessments, STORES.goals, STORES.caseRecords, STORES.meta]
+    [STORES.timeline, STORES.riskAssessments, STORES.goals, STORES.caseRecords, STORES.crisisWarnings, STORES.meta]
       .forEach(storeName => tx.objectStore(storeName).clear());
     await promisifyTransaction(tx);
     console.info("[DB] 所有数据已清空");
@@ -534,10 +594,12 @@ export async function resetToSampleData(
   sampleRisk: RiskAssessment[],
   sampleGoals: InterventionGoal[],
   sampleCaseRecords: CaseRecord[],
+  sampleCrisisWarnings: CrisisWarning[],
   sampleNextTimelineId: number,
   sampleNextRiskId: number,
   sampleNextGoalId: number,
-  sampleNextCaseRecordId: number
+  sampleNextCaseRecordId: number,
+  sampleNextCrisisWarningId: number
 ): Promise<AppData> {
   await clearAllData();
   const db = await openDB();
@@ -548,20 +610,24 @@ export async function resetToSampleData(
       sampleRisk,
       sampleGoals,
       sampleCaseRecords,
+      sampleCrisisWarnings,
       sampleNextTimelineId,
       sampleNextRiskId,
       sampleNextGoalId,
-      sampleNextCaseRecordId
+      sampleNextCaseRecordId,
+      sampleNextCrisisWarningId
     );
     return {
       timeline: sampleTimeline,
       riskAssessments: sampleRisk,
       goals: sampleGoals,
       caseRecords: sampleCaseRecords,
+      crisisWarnings: sampleCrisisWarnings,
       nextTimelineId: sampleNextTimelineId,
       nextRiskId: sampleNextRiskId,
       nextGoalId: sampleNextGoalId,
       nextCaseRecordId: sampleNextCaseRecordId,
+      nextCrisisWarningId: sampleNextCrisisWarningId,
     };
   } finally {
     db.close();
