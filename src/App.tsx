@@ -4506,8 +4506,10 @@ function App() {
         if (!latestRisk || latestRisk.level !== caseSearchFilters.riskLevel) return false;
       }
       if (caseSearchFilters.crisisWarningStatus) {
-        const cwStatus = crisisWarningStats.byClient.get(record.clientCode);
-        if (!cwStatus || cwStatus !== caseSearchFilters.crisisWarningStatus) return false;
+        const hasMatchingWarning = crisisWarnings.some(w =>
+          w.clientCode === record.clientCode && w.status === caseSearchFilters.crisisWarningStatus
+        );
+        if (!hasMatchingWarning) return false;
       }
       if (caseSearchFilters.emotionalState) {
         if (record.emotionalState !== caseSearchFilters.emotionalState) return false;
@@ -4530,7 +4532,7 @@ function App() {
       }
       return true;
     });
-  }, [caseRecords, caseSearchFilters, hasCaseSearchFilters, latestRiskByClient, crisisWarningStats]);
+  }, [caseRecords, caseSearchFilters, hasCaseSearchFilters, latestRiskByClient, crisisWarningStats, crisisWarnings]);
 
   const resetCaseSearchFilters = useCallback(() => {
     setCaseSearchFilters({
