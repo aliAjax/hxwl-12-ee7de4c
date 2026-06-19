@@ -1346,6 +1346,15 @@ function SupervisionWorkbench({
     feedback: records.filter(r => r.status === "feedback").length,
   }), [records]);
 
+  useEffect(() => {
+    if (selectedRecord) {
+      const latest = records.find(r => r.id === selectedRecord.id);
+      if (latest && JSON.stringify(latest) !== JSON.stringify(selectedRecord)) {
+        setSelectedRecord(latest);
+      }
+    }
+  }, [records, selectedRecord]);
+
   const openNewRecord = () => {
     const newRecord: SupervisionRecord = {
       id: "",
@@ -1378,6 +1387,9 @@ function SupervisionWorkbench({
     const updated = { ...editingRecord, updatedAt: new Date().toISOString() };
     if (updated.id) {
       onUpdateRecord(updated);
+      if (selectedRecord?.id === updated.id) {
+        setSelectedRecord(updated);
+      }
     } else {
       const newRecord = { ...updated, id: "sv" + nextSupervisionId++ };
       onAddRecord(newRecord);
@@ -1397,6 +1409,9 @@ function SupervisionWorkbench({
     };
     if (updated.id) {
       onSubmitForSupervision(updated);
+      if (selectedRecord?.id === updated.id) {
+        setSelectedRecord(updated);
+      }
     } else {
       const newRecord = { ...updated, id: "sv" + nextSupervisionId++ };
       onAddRecord(newRecord);
@@ -1430,6 +1445,14 @@ function SupervisionWorkbench({
   const handleSaveFeedback = () => {
     if (!feedbackForm || !selectedRecord) return;
     if (!feedbackForm.caseConceptualization || !feedbackForm.interventionSuggestions) return;
+    const updatedRecord: SupervisionRecord = {
+      ...selectedRecord,
+      status: "feedback",
+      feedbackHistory: [...selectedRecord.feedbackHistory, feedbackForm],
+      lastFeedbackAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    setSelectedRecord(updatedRecord);
     onAddFeedback(selectedRecord.id, feedbackForm);
     setIsGivingFeedback(false);
     setFeedbackForm(null);
