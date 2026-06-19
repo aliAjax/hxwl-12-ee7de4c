@@ -181,7 +181,7 @@ export interface SupervisionRecord {
   updatedAt: string;
 }
 
-export type UserRole = "counselor" | "supervisor";
+export type UserRole = "counselor" | "supervisor" | "admin";
 
 const initialCaseRecords: CaseRecord[] = [
   {
@@ -2013,6 +2013,540 @@ function SupervisionWorkbench({
   );
 }
 
+interface OverviewFilters {
+  startDate: string;
+  endDate: string;
+  topics: string[];
+  riskLevels: RiskLevel[];
+}
+
+interface TopicSummary {
+  topic: string;
+  caseCount: number;
+  sessionCount: number;
+}
+
+interface RiskSummary {
+  level: RiskLevel;
+  label: string;
+  caseCount: number;
+  percentage: number;
+}
+
+interface SessionFrequencyItem {
+  range: string;
+  caseCount: number;
+  percentage: number;
+}
+
+interface GoalCompletionSummary {
+  totalGoals: number;
+  completedGoals: number;
+  activeGoals: number;
+  pausedGoals: number;
+  completionRate: number;
+  avgProgress: number;
+}
+
+interface OverviewSummaryData {
+  totalCases: number;
+  totalSessions: number;
+  topicDistribution: TopicSummary[];
+  riskDistribution: RiskSummary[];
+  sessionFrequency: SessionFrequencyItem[];
+  goalCompletion: GoalCompletionSummary;
+}
+
+function DataOverviewSection({
+  timeline,
+  assessments,
+  goals,
+  caseRecords,
+}: {
+  timeline: TimelineRecord[];
+  assessments: RiskAssessment[];
+  goals: InterventionGoal[];
+  caseRecords: CaseRecord[];
+}) {
+  const allTopics = useMemo(() => {
+    const topics = new Set<string>();
+    caseRecords.forEach(r => r.consultationTopic && topics.add(r.consultationTopic));
+    timeline.forEach(r => r.topic && topics.add(r.topic));
+    return Array.from(topics).sort();
+  }, [caseRecords, timeline]);
+
+  const [filters, setFilters] = useState<OverviewFilters>({
+    startDate: "",
+    endDate: "",
+    topics: [],
+    riskLevels: [],
+  });
+
+  const [showTopicDropdown, setShowTopicDropdown] = useState(false);
+  const [showRiskDropdown, setShowRiskDropdown] = useState(false);
+
+  const filteredClientCodes = useMemo(() => {
+    let codes = new Set<string>();
+
+    caseRecords.forEach(r => codes.add(r.clientCode));
+    timeline.forEach(r => codes.add(r.clientCode));
+    assessments.forEach(r => codes.add(r.clientCode));
+    goals.forEach(r => codes.add(r.clientCode));
+
+    if (filters.startDate) {
+      const start = new Date(filters.startDate);
+      const filteredByDate = new Set<string>();
+      timeline.forEach(r => {
+        if (r.sessionDate && new Date(r.sessionDate) >= start) filteredByDate.add(r.clientCode);
+      });
+      caseRecords.forEach(r => {
+        if (r.sessionDate && new Date(r.sessionDate) >= start) filteredByDate.add(r.clientCode);
+      });
+      assessments.forEach(r => {
+        if (r.assessDate && new Date(r.assessDate) >= start) filteredByDate.add(r.clientCode);
+      });
+      if (filters.startDate || filters.endDate) {
+        codes = new Set([...codes].filter(c => filteredByDate.has(c)));
+      }
+    }
+
+    if (filters.endDate) {
+      const end = new Date(filters.endDate);
+      end.setHours(23, 59, 59, 999);
+      const filteredByDate = new Set<string>();
+      timeline.forEach(r => {
+        if (r.sessionDate && new Date(r.sessionDate) <= end) filteredByDate.add(r.clientCode);
+      });
+      caseRecords.forEach(r => {
+        if (r.sessionDate && new Date(r.sessionDate) <= end) filteredByDate.add(r.clientCode);
+      });
+      assessments.forEach(r => {
+        if (r.assessDate && new Date(r.assessDate) <= end) filteredByDate.add(r.clientCode);
+      });
+      codes = new Set([...codes].filter(c => filteredByDate.has(c)));
+    }
+
+    if (filters.topics.length > 0) {
+      const topicClients = new Set<string>();
+      caseRecords.forEach(r => {
+        if (filters.topics.includes(r.consultationTopic)) topicClients.add(r.clientCode);
+      });
+      timeline.forEach(r => {
+        if (filters.topics.includes(r.topic)) topicClients.add(r.clientCode);
+      });
+      codes = new Set([...codes].filter(c => topicClients.has(c)));
+    }
+
+    if (filters.riskLevels.length > 0) {
+      const riskClients = new Set<string>();
+      const latestByClient = new Map<string, RiskAssessment>();
+      assessments.forEach(a => {
+        const existing = latestByClient.get(a.clientCode);
+        if (!existing || existing.assessDate < a.assessDate) {
+          latestByClient.set(a.clientCode, a);
+        }
+      });
+      latestByClient.forEach((a, code) => {
+        if (filters.riskLevels.includes(a.level)) riskClients.add(code);
+      });
+      codes = new Set([...codes].filter(c => riskClients.has(c)));
+    }
+
+    return Array.from(codes).sort();
+  }, [timeline, assessments, goals, caseRecords, filters]);
+
+  const summaryData = useMemo<OverviewSummaryData>(() => {
+    const filteredTimeline = timeline.filter(r => filteredClientCodes.includes(r.clientCode));
+    const filteredAssessments = assessments.filter(r => filteredClientCodes.includes(r.clientCode));
+    const filteredGoals = goals.filter(r => filteredClientCodes.includes(r.clientCode));
+    const filteredCaseRecords = caseRecords.filter(r => filteredClientCodes.includes(r.clientCode));
+
+    const topicMap = new Map<string, { caseCount: number; sessionCount: number }>();
+    const topicClients = new Map<string, Set<string>>();
+
+    filteredCaseRecords.forEach(r => {
+      if (r.consultationTopic) {
+        if (!topicMap.has(r.consultationTopic)) {
+          topicMap.set(r.consultationTopic, { caseCount: 0, sessionCount: 0 });
+          topicClients.set(r.consultationTopic, new Set());
+        }
+        const data = topicMap.get(r.consultationTopic)!;
+        const clients = topicClients.get(r.consultationTopic)!;
+        if (!clients.has(r.clientCode)) {
+          clients.add(r.clientCode);
+          data.caseCount++;
+        }
+        data.sessionCount++;
+      }
+    });
+
+    filteredTimeline.forEach(r => {
+      if (r.topic) {
+        if (!topicMap.has(r.topic)) {
+          topicMap.set(r.topic, { caseCount: 0, sessionCount: 0 });
+          topicClients.set(r.topic, new Set());
+        }
+        const data = topicMap.get(r.topic)!;
+        const clients = topicClients.get(r.topic)!;
+        if (!clients.has(r.clientCode)) {
+          clients.add(r.clientCode);
+          data.caseCount++;
+        }
+        data.sessionCount++;
+      }
+    });
+
+    const topicDistribution: TopicSummary[] = Array.from(topicMap.entries())
+      .map(([topic, data]) => ({ topic, ...data }))
+      .sort((a, b) => b.caseCount - a.caseCount);
+
+    const latestByClient = new Map<string, RiskAssessment>();
+    filteredAssessments.forEach(a => {
+      const existing = latestByClient.get(a.clientCode);
+      if (!existing || existing.assessDate < a.assessDate) {
+        latestByClient.set(a.clientCode, a);
+      }
+    });
+
+    const riskCounts: Record<RiskLevel, number> = { stable: 0, watch: 0, medium: 0, high: 0 };
+    latestByClient.forEach(a => {
+      riskCounts[a.level]++;
+    });
+
+    const totalWithRisk = latestByClient.size;
+    const riskDistribution: RiskSummary[] = (["high", "medium", "watch", "stable"] as RiskLevel[]).map(level => ({
+      level,
+      label: riskLevelLabels[level],
+      caseCount: riskCounts[level],
+      percentage: totalWithRisk > 0 ? Math.round((riskCounts[level] / totalWithRisk) * 100) : 0,
+    }));
+
+    const sessionCountsByClient = new Map<string, number>();
+    filteredTimeline.forEach(r => {
+      sessionCountsByClient.set(r.clientCode, (sessionCountsByClient.get(r.clientCode) || 0) + 1);
+    });
+    filteredCaseRecords.forEach(r => {
+      sessionCountsByClient.set(r.clientCode, (sessionCountsByClient.get(r.clientCode) || 0) + 1);
+    });
+
+    const frequencyRanges = [
+      { range: "1-2次", min: 1, max: 2, count: 0 },
+      { range: "3-5次", min: 3, max: 5, count: 0 },
+      { range: "6-10次", min: 6, max: 10, count: 0 },
+      { range: "10次以上", min: 11, max: Infinity, count: 0 },
+    ];
+
+    const totalClientsWithSessions = sessionCountsByClient.size;
+    sessionCountsByClient.forEach(count => {
+      for (const range of frequencyRanges) {
+        if (count >= range.min && count <= range.max) {
+          range.count++;
+          break;
+        }
+      }
+    });
+
+    const sessionFrequency: SessionFrequencyItem[] = frequencyRanges.map(r => ({
+      range: r.range,
+      caseCount: r.count,
+      percentage: totalClientsWithSessions > 0 ? Math.round((r.count / totalClientsWithSessions) * 100) : 0,
+    }));
+
+    const totalGoals = filteredGoals.length;
+    const completedGoals = filteredGoals.filter(g => g.status === "completed").length;
+    const activeGoals = filteredGoals.filter(g => g.status === "active").length;
+    const pausedGoals = filteredGoals.filter(g => g.status === "paused").length;
+    const totalSteps = filteredGoals.reduce((s, g) => s + g.totalSteps, 0);
+    const completedSteps = filteredGoals.reduce((s, g) => s + g.completedSteps, 0);
+
+    const goalCompletion: GoalCompletionSummary = {
+      totalGoals,
+      completedGoals,
+      activeGoals,
+      pausedGoals,
+      completionRate: totalGoals > 0 ? Math.round((completedGoals / totalGoals) * 100) : 0,
+      avgProgress: totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0,
+    };
+
+    return {
+      totalCases: filteredClientCodes.length,
+      totalSessions: filteredTimeline.length + filteredCaseRecords.length,
+      topicDistribution,
+      riskDistribution,
+      sessionFrequency,
+      goalCompletion,
+    };
+  }, [filteredClientCodes, timeline, assessments, goals, caseRecords]);
+
+  const toggleTopic = (topic: string) => {
+    setFilters(prev => ({
+      ...prev,
+      topics: prev.topics.includes(topic)
+        ? prev.topics.filter(t => t !== topic)
+        : [...prev.topics, topic],
+    }));
+  };
+
+  const toggleRiskLevel = (level: RiskLevel) => {
+    setFilters(prev => ({
+      ...prev,
+      riskLevels: prev.riskLevels.includes(level)
+        ? prev.riskLevels.filter(l => l !== level)
+        : [...prev.riskLevels, level],
+    }));
+  };
+
+  const resetFilters = () => {
+    setFilters({
+      startDate: "",
+      endDate: "",
+      topics: [],
+      riskLevels: [],
+    });
+  };
+
+  const hasActiveFilters = filters.startDate || filters.endDate || filters.topics.length > 0 || filters.riskLevels.length > 0;
+
+  return (
+    <section className="records panel">
+      <div className="section-heading">
+        <div>
+          <p>机构管理</p>
+          <h2>数据总览</h2>
+          <p className="section-subtitle">
+            按咨询主题、风险等级、会谈频次和目标完成情况汇总 · 不展示来访者详细困扰文本
+          </p>
+        </div>
+        {hasActiveFilters && (
+          <button className="secondary-action" onClick={resetFilters}>重置筛选</button>
+        )}
+      </div>
+
+      <div className="overview-filters">
+        <div className="filter-group">
+          <label className="filter-label">时间范围</label>
+          <div className="date-range-inputs">
+            <input
+              type="date"
+              value={filters.startDate}
+              onChange={e => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+              placeholder="开始日期"
+            />
+            <span className="date-separator">至</span>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={e => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+              placeholder="结束日期"
+            />
+          </div>
+        </div>
+
+        <div className="filter-group">
+          <label className="filter-label">咨询主题</label>
+          <div className="multi-select-wrapper">
+            <button
+              className="multi-select-trigger"
+              onClick={() => { setShowTopicDropdown(!showTopicDropdown); setShowRiskDropdown(false); }}
+            >
+              {filters.topics.length === 0
+                ? "全部主题"
+                : `已选 ${filters.topics.length} 个主题`}
+              <span className="dropdown-arrow">▼</span>
+            </button>
+            {showTopicDropdown && (
+              <div className="multi-select-dropdown">
+                {allTopics.length === 0 && <div className="dropdown-empty">暂无主题</div>}
+                {allTopics.map(topic => (
+                  <label key={topic} className="dropdown-option">
+                    <input
+                      type="checkbox"
+                      checked={filters.topics.includes(topic)}
+                      onChange={() => toggleTopic(topic)}
+                    />
+                    <span>{topic}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="filter-group">
+          <label className="filter-label">风险等级</label>
+          <div className="multi-select-wrapper">
+            <button
+              className="multi-select-trigger"
+              onClick={() => { setShowRiskDropdown(!showRiskDropdown); setShowTopicDropdown(false); }}
+            >
+              {filters.riskLevels.length === 0
+                ? "全部等级"
+                : `已选 ${filters.riskLevels.length} 个等级`}
+              <span className="dropdown-arrow">▼</span>
+            </button>
+            {showRiskDropdown && (
+              <div className="multi-select-dropdown">
+                {(["high", "medium", "watch", "stable"] as RiskLevel[]).map(level => (
+                  <label key={level} className="dropdown-option">
+                    <input
+                      type="checkbox"
+                      checked={filters.riskLevels.includes(level)}
+                      onChange={() => toggleRiskLevel(level)}
+                    />
+                    <span className={`risk-badge-inline ${riskLevelColors[level]}`}>
+                      {riskLevelLabels[level]}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="overview-metrics">
+        <div className="overview-metric-card">
+          <span className="overview-metric-label">总个案数</span>
+          <strong className="overview-metric-value">{summaryData.totalCases}</strong>
+        </div>
+        <div className="overview-metric-card">
+          <span className="overview-metric-label">总会谈数</span>
+          <strong className="overview-metric-value">{summaryData.totalSessions}</strong>
+        </div>
+        <div className="overview-metric-card">
+          <span className="overview-metric-label">咨询主题</span>
+          <strong className="overview-metric-value">{summaryData.topicDistribution.length}</strong>
+        </div>
+        <div className="overview-metric-card">
+          <span className="overview-metric-label">目标完成率</span>
+          <strong className="overview-metric-value">{summaryData.goalCompletion.completionRate}%</strong>
+        </div>
+      </div>
+
+      <div className="overview-grid">
+        <div className="overview-panel">
+          <h3 className="overview-panel-title">咨询主题分布</h3>
+          {summaryData.topicDistribution.length === 0 ? (
+            <p className="tl-empty">暂无数据</p>
+          ) : (
+            <div className="topic-distribution-list">
+              {summaryData.topicDistribution.map(item => (
+                <div key={item.topic} className="topic-dist-item">
+                  <div className="topic-dist-header">
+                    <span className="topic-dist-name">{item.topic}</span>
+                    <span className="topic-dist-count">{item.caseCount} 个个案</span>
+                  </div>
+                  <div className="topic-dist-bar">
+                    <div
+                      className="topic-dist-fill"
+                      style={{
+                        width: `${summaryData.totalCases > 0 ? (item.caseCount / summaryData.totalCases) * 100 : 0}%`
+                      }}
+                    />
+                  </div>
+                  <div className="topic-dist-meta">
+                    <span>{item.sessionCount} 次会谈</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="overview-panel">
+          <h3 className="overview-panel-title">风险等级分布</h3>
+          <div className="risk-distribution-list">
+            {summaryData.riskDistribution.map(item => (
+              <div key={item.level} className="risk-dist-item">
+                <div className="risk-dist-header">
+                  <span className={`risk-dot ${riskLevelColors[item.level]}`} />
+                  <span className="risk-dist-label">{item.label}</span>
+                  <span className="risk-dist-count">{item.caseCount} 人</span>
+                  <span className="risk-dist-percent">{item.percentage}%</span>
+                </div>
+                <div className="risk-dist-bar">
+                  <div
+                    className={`risk-dist-fill ${riskLevelColors[item.level]}`}
+                    style={{ width: `${item.percentage}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="overview-note">
+            基于最新一次风险评估统计
+          </div>
+        </div>
+
+        <div className="overview-panel">
+          <h3 className="overview-panel-title">会谈频次分布</h3>
+          {summaryData.sessionFrequency.every(s => s.caseCount === 0) ? (
+            <p className="tl-empty">暂无数据</p>
+          ) : (
+            <div className="frequency-distribution-list">
+              {summaryData.sessionFrequency.map(item => (
+                <div key={item.range} className="freq-dist-item">
+                  <div className="freq-dist-header">
+                    <span className="freq-dist-range">{item.range}</span>
+                    <span className="freq-dist-count">{item.caseCount} 个个案</span>
+                  </div>
+                  <div className="freq-dist-bar">
+                    <div
+                      className="freq-dist-fill"
+                      style={{ width: `${item.percentage}%` }}
+                    />
+                  </div>
+                  <span className="freq-dist-percent">{item.percentage}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="overview-panel">
+          <h3 className="overview-panel-title">目标完成情况</h3>
+          <div className="goal-overview-stats">
+            <div className="goal-overview-stat">
+              <span className="goal-overview-label">总目标数</span>
+              <strong className="goal-overview-value">{summaryData.goalCompletion.totalGoals}</strong>
+            </div>
+            <div className="goal-overview-stat">
+              <span className="goal-overview-label">已完成</span>
+              <strong className="goal-overview-value goal-completed-text">
+                {summaryData.goalCompletion.completedGoals}
+              </strong>
+            </div>
+            <div className="goal-overview-stat">
+              <span className="goal-overview-label">进行中</span>
+              <strong className="goal-overview-value goal-active-text">
+                {summaryData.goalCompletion.activeGoals}
+              </strong>
+            </div>
+            <div className="goal-overview-stat">
+              <span className="goal-overview-label">已暂停</span>
+              <strong className="goal-overview-value goal-paused-text">
+                {summaryData.goalCompletion.pausedGoals}
+              </strong>
+            </div>
+          </div>
+          <div className="goal-overview-progress">
+            <div className="goal-overview-progress-label">
+              <span>总体进度</span>
+              <span>{summaryData.goalCompletion.avgProgress}%</span>
+            </div>
+            <div className="goal-progress-bar">
+              <div
+                className="goal-progress-fill"
+                style={{ width: `${summaryData.goalCompletion.avgProgress}%` }}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 interface Toast {
   id: number;
   message: string;
@@ -2399,10 +2933,15 @@ function App() {
 
   const handleRoleChange = useCallback((role: UserRole) => {
     setCurrentRole(role);
-    showToast(`已切换到${role === "counselor" ? "咨询师" : "督导"}视角`, "info");
+    const roleLabels: Record<UserRole, string> = {
+      counselor: "咨询师",
+      supervisor: "督导",
+      admin: "机构管理员"
+    };
+    showToast(`已切换到${roleLabels[role]}视角`, "info");
   }, [showToast]);
 
-  const { highRiskCount, mediumRiskCount, activeClientCodes } = useMemo(() => {
+  const { highRiskCount, mediumRiskCount, watchRiskCount, stableRiskCount, activeClientCodes } = useMemo(() => {
     const latestByClient = new Map<string, RiskAssessment>();
     for (const a of assessments) {
       const existing = latestByClient.get(a.clientCode);
@@ -2412,9 +2951,13 @@ function App() {
     }
     let high = 0;
     let medium = 0;
+    let watch = 0;
+    let stable = 0;
     for (const a of latestByClient.values()) {
       if (a.level === "high") high++;
       else if (a.level === "medium") medium++;
+      else if (a.level === "watch") watch++;
+      else if (a.level === "stable") stable++;
     }
     const codesFromTimeline = Array.from(new Set(timeline.map(r => r.clientCode)));
     const codesFromAssess = Array.from(latestByClient.keys());
@@ -2429,9 +2972,39 @@ function App() {
     return {
       highRiskCount: high,
       mediumRiskCount: medium,
+      watchRiskCount: watch,
+      stableRiskCount: stable,
       activeClientCodes: allCodes
     };
   }, [assessments, goals, timeline, caseRecords]);
+
+  const thisWeekSessionCount = useMemo(() => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - diff);
+    weekStart.setHours(0, 0, 0, 0);
+
+    let count = 0;
+    timeline.forEach(r => {
+      if (r.sessionDate) {
+        const sessionDate = new Date(r.sessionDate);
+        if (sessionDate >= weekStart && sessionDate <= now) {
+          count++;
+        }
+      }
+    });
+    caseRecords.forEach(r => {
+      if (r.sessionDate) {
+        const sessionDate = new Date(r.sessionDate);
+        if (sessionDate >= weekStart && sessionDate <= now) {
+          count++;
+        }
+      }
+    });
+    return count;
+  }, [timeline, caseRecords]);
 
   const goalProgressCount = useMemo(() => {
     const activeGoals = goals.filter(g => g.status === "active");
@@ -2443,12 +3016,12 @@ function App() {
 
   const metricValues = useMemo(() => {
     return [
-      String(activeClientCodes.length + 78),
+      String(activeClientCodes.length),
       String(highRiskCount + mediumRiskCount),
-      "31",
+      String(thisWeekSessionCount),
       goalProgressCount
     ];
-  }, [activeClientCodes.length, highRiskCount, mediumRiskCount, goalProgressCount]);
+  }, [activeClientCodes.length, highRiskCount, mediumRiskCount, thisWeekSessionCount, goalProgressCount]);
 
   if (isLoading) {
     return (
@@ -2492,11 +3065,24 @@ function App() {
 
       <section className="workspace">
         <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
+          <h2>角色切换</h2>
+          <div className="role-switcher-vertical">
+            {(["counselor", "supervisor", "admin"] as UserRole[]).map(role => {
+              const labels: Record<UserRole, string> = {
+                counselor: "咨询师",
+                supervisor: "督导",
+                admin: "机构管理员"
+              };
+              return (
+                <button
+                  key={role}
+                  className={`role-chip ${currentRole === role ? "active" : ""}`}
+                  onClick={() => handleRoleChange(role)}
+                >
+                  {labels[role]}
+                </button>
+              );
+            })}
           </div>
           <h2>筛选</h2>
           <div className="chips muted">
@@ -2519,22 +3105,12 @@ function App() {
             <div className="risk-dist-item">
               <span className={`risk-dot ${riskLevelColors.watch}`} />
               <span className="risk-dist-label">关注</span>
-              <strong className="risk-dist-count">
-                {activeClientCodes.filter(c => {
-                  const lat = assessments.filter(a => a.clientCode === c).sort((a,b) => b.assessDate.localeCompare(a.assessDate))[0];
-                  return lat?.level === "watch";
-                }).length}
-              </strong>
+              <strong className="risk-dist-count">{watchRiskCount}</strong>
             </div>
             <div className="risk-dist-item">
               <span className={`risk-dot ${riskLevelColors.stable}`} />
               <span className="risk-dist-label">稳定</span>
-              <strong className="risk-dist-count">
-                {activeClientCodes.filter(c => {
-                  const lat = assessments.filter(a => a.clientCode === c).sort((a,b) => b.assessDate.localeCompare(a.assessDate))[0];
-                  return lat?.level === "stable";
-                }).length}
-              </strong>
+              <strong className="risk-dist-count">{stableRiskCount}</strong>
             </div>
           </div>
           <h2>离线存储</h2>
@@ -2741,6 +3317,13 @@ function App() {
         onSubmitForSupervision={handleSubmitForSupervision}
         onSaveDraft={handleSaveDraft}
         onAddFeedback={handleAddFeedback}
+      />
+
+      <DataOverviewSection
+        timeline={timeline}
+        assessments={assessments}
+        goals={goals}
+        caseRecords={caseRecords}
       />
     </main>
   );
