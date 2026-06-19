@@ -2,6 +2,19 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import "./styles.css";
 import SessionSummaryExport from "./components/SessionSummaryExport";
 import {
+  useAuth,
+  ProtectedButton,
+  PermissionGate,
+  ProtectedMenu,
+  RoleSwitcher,
+  UserInfoBar,
+  AuditLogViewer,
+  ProtectedField,
+  createAuditLog,
+  assertPermission,
+  type PermissionAction,
+} from "./auth";
+import {
   loadAllData,
   saveTimelineRecord,
   deleteTimelineRecord as dbDeleteTimeline,
@@ -91,6 +104,7 @@ export interface TimelineRecord {
   emotionalState: string;
   intervention: string;
   nextGoal: string;
+  eventType?: string;
 }
 
 export type RiskLevel = "stable" | "watch" | "medium" | "high";
@@ -162,6 +176,7 @@ export interface SupervisionFeedback {
   ethicalConsiderations: string;
   overallEvaluation: string;
   overallRating: number;
+  type?: string;
 }
 
 export interface SupervisionRecord {
@@ -2778,13 +2793,16 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
   );
 }
 
+type AppTab = "caseRecords" | "timeline" | "risk" | "goals" | "supervision" | "export" | "audit";
+
 function App() {
+  const { currentRole, switchRole, session, hasPermission: hasPerm, assertPermission: assertPerm } = useAuth();
+  const [activeTab, setActiveTab] = useState<AppTab>("caseRecords");
   const [timeline, setTimeline] = useState<TimelineRecord[]>(initialTimelineData);
   const [assessments, setAssessments] = useState<RiskAssessment[]>(initialRiskAssessments);
   const [goals, setGoals] = useState<InterventionGoal[]>(initialGoals);
   const [caseRecords, setCaseRecords] = useState<CaseRecord[]>(initialCaseRecords);
   const [supervisionRecords, setSupervisionRecords] = useState<SupervisionRecord[]>(initialSupervisionRecords);
-  const [currentRole, setCurrentRole] = useState<UserRole>("counselor");
   const [isLoading, setIsLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dbStatus, setDbStatus] = useState<DBStatus>({ isSupported: true, isConnected: false, version: 0 });
@@ -2811,6 +2829,23 @@ function App() {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 3500);
   }, []);
+
+  const createAudit = useCallback((params: {
+    action: Parameters<typeof createAuditLog>[0]["action"];
+    targetType: Parameters<typeof createAuditLog>[0]["targetType"];
+    targetId?: string;
+    targetLabel?: string;
+    permissionChecked?: PermissionAction;
+    status?: Parameters<typeof createAuditLog>[0]["status"];
+    details?: Record<string, unknown>;
+    message?: string;
+  }) => {
+    createAuditLog({
+      actorRole: currentRole,
+      actorName: session?.userName,
+      ...params,
+    });
+  }, [currentRole, session?.userName]);
 
   const handleDBEvent = useCallback((event: DBEventType, data?: unknown) => {
     if (event === "upgrade") {
@@ -2973,9 +3008,21 @@ function App() {
   }, [showToast]);
 
   const handleResetToSampleData = useCallback(async () => {
+    try {
+      assertPerm("system.reset", "重置示例数据");
+    } catch (e) {
+      showToast("无权限执行此操作", "error");
+      return;
+    }
     if (!confirm("确定要重置所有数据吗？此操作将清空所有修改并恢复为示例数据。")) {
       return;
     }
+    createAudit({
+      action: "system_reset",
+      targetType: "system",
+      permissionChecked: "system.reset",
+      message: "用户请求重置系统数据为示例数据",
+    });
     try {
       setIsLoading(true);
       const data = await resetToSampleData(
@@ -2996,20 +3043,40 @@ function App() {
       nextRiskId = data.nextRiskId;
       nextGoalId = data.nextGoalId;
       nextCaseRecordId = data.nextCaseRecordId;
+      createAudit({
+        action: "system_reset",
+        targetType: "system",
+        permissionChecked: "system.reset",
+        status: "success",
+        message: "系统数据已重置为示例数据",
+      });
       showToast("数据已重置为示例数据", "success");
     } catch (err) {
       console.error("[DB] 重置数据失败:", err);
+      createAudit({
+        action: "system_reset",
+        targetType: "system",
+        permissionChecked: "system.reset",
+        status: "failed",
+        message: "系统数据重置失败",
+      });
       showToast("重置数据失败");
     } finally {
       setIsLoading(false);
     }
-  }, [showToast]);
+  }, [assertPerm, createAudit, showToast]);
 
   const handleCaseFieldChange = useCallback((field: string, value: string) => {
     setCaseFormData(prev => ({ ...prev, [field]: value }));
   }, []);
 
   const openNewCaseForm = useCallback(() => {
+    try {
+      assertPerm("case.create", "新增个案记录");
+    } catch (e) {
+      showToast("无权限新增个案记录", "error");
+      return;
+    }
     setEditingCaseRecord({
       id: "",
       clientCode: "",
@@ -3023,15 +3090,29 @@ function App() {
       updatedAt: new Date().toISOString(),
     });
     setIsCaseFormOpen(true);
-  }, []);
+  }, [assertPerm, showToast]);
 
   const openEditCaseForm = useCallback((record: CaseRecord) => {
+    try {
+      assertPerm("case.edit", "编辑个案记录");
+    } catch (e) {
+      showToast("无权限编辑个案记录", "error");
+      return;
+    }
     setEditingCaseRecord({ ...record });
     setIsCaseFormOpen(true);
-  }, []);
+  }, [assertPerm, showToast]);
 
   const handleSaveCaseRecord = useCallback(() => {
     if (!editingCaseRecord) return;
+    const isEdit = !!editingCaseRecord.id;
+    const permAction = isEdit ? "case.edit" : "case.create";
+    try {
+      assertPerm(permAction, isEdit ? "编辑个案记录" : "新增个案记录");
+    } catch (e) {
+      showToast("无权限执行此操作", "error");
+      return;
+    }
     if (!editingCaseRecord.clientCode || !editingCaseRecord.consultationTopic
       || !editingCaseRecord.mainConcern || !editingCaseRecord.intervention) {
       showToast("请填写必填项（来访者代号、咨询主题、主要困扰、干预方法）");
@@ -3045,22 +3126,56 @@ function App() {
     if (finalRecord.id) {
       setCaseRecords(prev => prev.map(r => r.id === finalRecord.id ? finalRecord : r));
       persistCaseRecord(finalRecord);
+      createAudit({
+        action: "update",
+        targetType: "case_record",
+        targetId: finalRecord.id,
+        targetLabel: finalRecord.clientCode,
+        permissionChecked: "case.edit",
+        status: "success",
+        message: "个案记录已更新",
+      });
     } else {
       const newRecord = { ...finalRecord, id: "cr" + nextCaseRecordId++, createdAt: now };
       setCaseRecords(prev => [...prev, newRecord]);
       persistCaseRecord(newRecord);
       persistCounters();
+      createAudit({
+        action: "create",
+        targetType: "case_record",
+        targetId: newRecord.id,
+        targetLabel: newRecord.clientCode,
+        permissionChecked: "case.create",
+        status: "success",
+        message: "个案记录已创建",
+      });
     }
     setIsCaseFormOpen(false);
     setEditingCaseRecord(null);
     showToast("个案记录已保存", "success");
-  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast]);
+  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit]);
 
   const handleDeleteCaseRecord = useCallback((id: string) => {
+    try {
+      assertPerm("case.delete", "删除个案记录");
+    } catch (e) {
+      showToast("无权限删除个案记录", "error");
+      return;
+    }
+    const record = caseRecords.find(r => r.id === id);
     setCaseRecords(prev => prev.filter(r => r.id !== id));
     persistCaseRecordDelete(id);
+    createAudit({
+      action: "delete",
+      targetType: "case_record",
+      targetId: id,
+      targetLabel: record?.clientCode,
+      permissionChecked: "case.delete",
+      status: "success",
+      message: "个案记录已删除",
+    });
     showToast("个案记录已删除", "info");
-  }, [persistCaseRecordDelete, showToast]);
+  }, [persistCaseRecordDelete, showToast, assertPerm, createAudit, caseRecords]);
 
   const handleCancelCaseForm = useCallback(() => {
     setIsCaseFormOpen(false);
@@ -3068,75 +3183,268 @@ function App() {
   }, []);
 
   const handleAddTimeline = useCallback((record: TimelineRecord) => {
+    try {
+      assertPerm("timeline.create", "新增时间线记录");
+    } catch (e) {
+      showToast("无权限新增时间线记录", "error");
+      return;
+    }
     setTimeline(prev => {
       const next = [...prev, record];
       persistTimeline(next);
       persistCounters();
       return next;
     });
-  }, [persistTimeline, persistCounters]);
+    createAudit({
+      action: "create",
+      targetType: "timeline_record",
+      targetId: record.id,
+      targetLabel: record.clientCode,
+      permissionChecked: "timeline.create",
+      status: "success",
+      details: { eventType: record.eventType },
+      message: "时间线记录已创建",
+    });
+  }, [persistTimeline, persistCounters, assertPerm, showToast, createAudit]);
 
   const handleUpdateTimeline = useCallback((record: TimelineRecord) => {
+    try {
+      assertPerm("timeline.edit", "编辑时间线记录");
+    } catch (e) {
+      showToast("无权限编辑时间线记录", "error");
+      return;
+    }
     setTimeline(prev => {
       const next = prev.map(r => r.id === record.id ? record : r);
       persistTimeline(next);
       return next;
     });
-  }, [persistTimeline]);
+    createAudit({
+      action: "update",
+      targetType: "timeline_record",
+      targetId: record.id,
+      targetLabel: record.clientCode,
+      permissionChecked: "timeline.edit",
+      status: "success",
+      message: "时间线记录已更新",
+    });
+  }, [persistTimeline, assertPerm, showToast, createAudit]);
 
   const handleDeleteTimeline = useCallback((id: string) => {
+    try {
+      assertPerm("timeline.delete", "删除时间线记录");
+    } catch (e) {
+      showToast("无权限删除时间线记录", "error");
+      return;
+    }
+    const record = timeline.find(r => r.id === id);
     setTimeline(prev => prev.filter(r => r.id !== id));
     persistTimelineDelete(id);
-  }, [persistTimelineDelete]);
+    createAudit({
+      action: "delete",
+      targetType: "timeline_record",
+      targetId: id,
+      targetLabel: record?.clientCode,
+      permissionChecked: "timeline.delete",
+      status: "success",
+      message: "时间线记录已删除",
+    });
+  }, [persistTimelineDelete, assertPerm, showToast, createAudit, timeline]);
 
   const handleAddAssessment = useCallback((a: RiskAssessment) => {
+    try {
+      assertPerm("risk.create", "新增风险评估");
+    } catch (e) {
+      showToast("无权限新增风险评估", "error");
+      return;
+    }
     setAssessments(prev => [...prev, a]);
     persistAssessment(a);
     persistCounters();
-  }, [persistAssessment, persistCounters]);
+    createAudit({
+      action: "create",
+      targetType: "risk_assessment",
+      targetId: a.id,
+      targetLabel: a.clientCode,
+      permissionChecked: "risk.create",
+      status: "success",
+      details: { level: a.level },
+      message: "风险评估已创建",
+    });
+  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit]);
 
   const handleDeleteAssessment = useCallback((id: string) => {
+    try {
+      assertPerm("risk.delete", "删除风险评估");
+    } catch (e) {
+      showToast("无权限删除风险评估", "error");
+      return;
+    }
+    const a = assessments.find(x => x.id === id);
     setAssessments(prev => prev.filter(a => a.id !== id));
     persistAssessmentDelete(id);
-  }, [persistAssessmentDelete]);
+    createAudit({
+      action: "delete",
+      targetType: "risk_assessment",
+      targetId: id,
+      targetLabel: a?.clientCode,
+      permissionChecked: "risk.delete",
+      status: "success",
+      message: "风险评估已删除",
+    });
+  }, [persistAssessmentDelete, assessments, assertPerm, showToast, createAudit]);
 
   const handleAddGoal = useCallback((g: InterventionGoal) => {
+    try {
+      assertPerm("goal.create", "新增目标追踪");
+    } catch (e) {
+      showToast("无权限新增目标追踪", "error");
+      return;
+    }
     setGoals(prev => [...prev, g]);
     persistGoal(g);
     persistCounters();
-  }, [persistGoal, persistCounters]);
+    createAudit({
+      action: "create",
+      targetType: "intervention_goal",
+      targetId: g.id,
+      targetLabel: g.clientCode,
+      permissionChecked: "goal.create",
+      status: "success",
+      message: "目标追踪已创建",
+    });
+  }, [persistGoal, persistCounters, assertPerm, showToast, createAudit]);
 
   const handleUpdateGoal = useCallback((g: InterventionGoal) => {
+    try {
+      assertPerm("goal.edit", "编辑目标追踪");
+    } catch (e) {
+      showToast("无权限编辑目标追踪", "error");
+      return;
+    }
     setGoals(prev => prev.map(item => item.id === g.id ? g : item));
     persistGoal(g);
-  }, [persistGoal]);
+    createAudit({
+      action: "update",
+      targetType: "intervention_goal",
+      targetId: g.id,
+      targetLabel: g.clientCode,
+      permissionChecked: "goal.edit",
+      status: "success",
+      message: "目标追踪已更新",
+    });
+  }, [persistGoal, assertPerm, showToast, createAudit]);
 
   const handleDeleteGoal = useCallback((id: string) => {
+    try {
+      assertPerm("goal.delete", "删除目标追踪");
+    } catch (e) {
+      showToast("无权限删除目标追踪", "error");
+      return;
+    }
+    const g = goals.find(x => x.id === id);
     setGoals(prev => prev.filter(g => g.id !== id));
     persistGoalDelete(id);
-  }, [persistGoalDelete]);
+    createAudit({
+      action: "delete",
+      targetType: "intervention_goal",
+      targetId: id,
+      targetLabel: g?.clientCode,
+      permissionChecked: "goal.delete",
+      status: "success",
+      message: "目标追踪已删除",
+    });
+  }, [persistGoalDelete, goals, assertPerm, showToast, createAudit]);
 
   const handleAddSupervisionRecord = useCallback((record: SupervisionRecord) => {
+    try {
+      assertPerm("supervision.create", "新增督导申请");
+    } catch (e) {
+      showToast("无权限新增督导申请", "error");
+      return;
+    }
     setSupervisionRecords(prev => [...prev, record]);
+    createAudit({
+      action: "create",
+      targetType: "supervision_record",
+      targetId: record.id,
+      targetLabel: record.clientCode,
+      permissionChecked: "supervision.create",
+      status: "success",
+      message: "督导申请已创建",
+    });
     showToast("督导申请已保存", "success");
-  }, [showToast]);
+  }, [showToast, assertPerm, createAudit]);
 
   const handleUpdateSupervisionRecord = useCallback((record: SupervisionRecord) => {
+    try {
+      assertPerm("supervision.create", "编辑督导申请");
+    } catch (e) {
+      showToast("无权限编辑督导申请", "error");
+      return;
+    }
     setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    createAudit({
+      action: "update",
+      targetType: "supervision_record",
+      targetId: record.id,
+      targetLabel: record.clientCode,
+      permissionChecked: "supervision.create",
+      status: "success",
+      message: "督导申请已更新",
+    });
     showToast("督导申请已更新", "success");
-  }, [showToast]);
+  }, [showToast, assertPerm, createAudit]);
 
   const handleSubmitForSupervision = useCallback((record: SupervisionRecord) => {
+    try {
+      assertPerm("supervision.submit", "提交督导评审");
+    } catch (e) {
+      showToast("无权限提交督导评审", "error");
+      return;
+    }
     setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    createAudit({
+      action: "submit",
+      targetType: "supervision_record",
+      targetId: record.id,
+      targetLabel: record.clientCode,
+      permissionChecked: "supervision.submit",
+      status: "success",
+      message: "督导申请已提交评审",
+    });
     showToast("已提交督导评审", "success");
-  }, [showToast]);
+  }, [showToast, assertPerm, createAudit]);
 
   const handleSaveDraft = useCallback((record: SupervisionRecord) => {
+    try {
+      assertPerm("supervision.create", "保存督导草稿");
+    } catch (e) {
+      showToast("无权限保存督导草稿", "error");
+      return;
+    }
     setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    createAudit({
+      action: "update",
+      targetType: "supervision_record",
+      targetId: record.id,
+      targetLabel: record.clientCode,
+      permissionChecked: "supervision.create",
+      status: "success",
+      details: { draft: true },
+      message: "督导草稿已保存",
+    });
     showToast("草稿已保存", "success");
-  }, [showToast]);
+  }, [showToast, assertPerm, createAudit]);
 
   const handleAddFeedback = useCallback((recordId: string, feedback: SupervisionFeedback) => {
+    try {
+      assertPerm("supervision.feedback", "提交督导反馈");
+    } catch (e) {
+      showToast("无权限提交督导反馈", "error");
+      return;
+    }
+    const record = supervisionRecords.find(r => r.id === recordId);
     setSupervisionRecords(prev => prev.map(r => {
       if (r.id !== recordId) return r;
       return {
@@ -3147,18 +3455,22 @@ function App() {
         updatedAt: new Date().toISOString(),
       };
     }));
+    createAudit({
+      action: "feedback",
+      targetType: "supervision_feedback",
+      targetId: recordId,
+      targetLabel: record?.clientCode,
+      permissionChecked: "supervision.feedback",
+      status: "success",
+      details: { feedbackType: feedback.type },
+      message: "督导意见已提交",
+    });
     showToast("督导意见已提交", "success");
-  }, [showToast]);
+  }, [showToast, supervisionRecords, assertPerm, createAudit]);
 
   const handleRoleChange = useCallback((role: UserRole) => {
-    setCurrentRole(role);
-    const roleLabels: Record<UserRole, string> = {
-      counselor: "咨询师",
-      supervisor: "督导",
-      admin: "机构管理员"
-    };
-    showToast(`已切换到${roleLabels[role]}视角`, "info");
-  }, [showToast]);
+    switchRole(role);
+  }, [switchRole]);
 
   const { highRiskCount, mediumRiskCount, watchRiskCount, stableRiskCount, activeClientCodes } = useMemo(() => {
     const latestByClient = new Map<string, RiskAssessment>();
@@ -3343,26 +3655,20 @@ function App() {
 
       <section className="workspace">
         <aside className="panel narrow">
+          <UserInfoBar />
           <h2>角色切换</h2>
-          <div className="role-switcher-vertical">
-            {(["counselor", "supervisor", "admin"] as UserRole[]).map(role => {
-              const labels: Record<UserRole, string> = {
-                counselor: "咨询师",
-                supervisor: "督导",
-                admin: "机构管理员"
-              };
-              return (
-                <button
-                  key={role}
-                  className={`role-chip ${currentRole === role ? "active" : ""}`}
-                  onClick={() => handleRoleChange(role)}
-                >
-                  {labels[role]}
-                </button>
-              );
-            })}
-          </div>
-          {currentRole !== "admin" && (
+          <RoleSwitcher variant="vertical" />
+          <ProtectedMenu menu="menu.auditLog">
+            <h2 style={{ marginTop: 16 }}>系统功能</h2>
+            <button
+              className={`role-chip ${activeTab === "audit" ? "active" : ""}`}
+              style={{ marginTop: 8 }}
+              onClick={() => setActiveTab("audit")}
+            >
+              📋 审计日志
+            </button>
+          </ProtectedMenu>
+          <ProtectedMenu menu="menu.dataOverview">
             <>
               <h2>筛选</h2>
               <div className="chips muted">
@@ -3371,7 +3677,7 @@ function App() {
                 ))}
               </div>
             </>
-          )}
+          </ProtectedMenu>
           <h2>风险分布</h2>
           <div className="risk-distribution">
             <div className="risk-dist-item">
@@ -3438,227 +3744,354 @@ function App() {
           )}
         </aside>
 
-        {currentRole !== "admin" ? (
-          <>
-            <section className="panel">
-              <div className="section-heading">
-                <div>
-                  <p>{project.domain}</p>
-                  <h2>个案档案录入</h2>
-                </div>
-                <div className="section-actions">
-                  <button className="secondary-action" onClick={handleResetToSampleData}>重置示例数据</button>
-                  <button className="primary-action" onClick={openNewCaseForm}>新增个案记录</button>
-                </div>
-              </div>
-
-              {isCaseFormOpen && editingCaseRecord && (
-            <div className="case-form-panel">
-              <div className="case-form-grid">
-                <label>
-                  <span>来访者代号 *</span>
-                  <input
-                    value={editingCaseRecord.clientCode}
-                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, clientCode: e.target.value })}
-                    placeholder="例如：C-042"
-                  />
-                </label>
-                <label>
-                  <span>咨询主题 *</span>
-                  <input
-                    value={editingCaseRecord.consultationTopic}
-                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, consultationTopic: e.target.value })}
-                    placeholder="例如：焦虑障碍"
-                  />
-                </label>
-                <label>
-                  <span>会谈日期</span>
-                  <input
-                    type="date"
-                    value={editingCaseRecord.sessionDate}
-                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, sessionDate: e.target.value })}
-                  />
-                </label>
-                <label>
-                  <span>情绪状态</span>
-                  <select
-                    value={editingCaseRecord.emotionalState}
-                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, emotionalState: e.target.value })}
+        <div className="panel" style={{ flex: 1 }}>
+          {activeTab === "audit" ? (
+            <AuditLogViewer />
+          ) : (
+            <>
+              <div style={{
+                display: "flex",
+                gap: 4,
+                borderBottom: "1px solid var(--border-subtle)",
+                marginBottom: 20,
+                flexWrap: "wrap",
+              }}>
+                <ProtectedMenu menu="menu.caseRecords">
+                  <button
+                    className={`role-chip ${activeTab === "caseRecords" ? "active" : ""}`}
+                    onClick={() => setActiveTab("caseRecords")}
+                    style={{ marginBottom: -1, borderRadius: "8px 8px 0 0" }}
                   >
-                    {emotionalOptions.map(opt => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="case-form-full">
-                  <span>主要困扰 *</span>
-                  <textarea
-                    value={editingCaseRecord.mainConcern}
-                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, mainConcern: e.target.value })}
-                    placeholder="描述来访者的主要困扰和问题表现"
-                    rows={2}
-                  />
-                </label>
-                <label className="case-form-full">
-                  <span>干预方法 *</span>
-                  <textarea
-                    value={editingCaseRecord.intervention}
-                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, intervention: e.target.value })}
-                    placeholder="描述本次咨询采用的干预技术和方法"
-                    rows={2}
-                  />
-                </label>
-                <label className="case-form-full">
-                  <span>下次目标</span>
-                  <textarea
-                    value={editingCaseRecord.nextGoal}
-                    onChange={e => setEditingCaseRecord({ ...editingCaseRecord, nextGoal: e.target.value })}
-                    placeholder="描述下次咨询前的家庭作业或练习目标"
-                    rows={2}
-                  />
-                </label>
+                    📁 个案档案
+                  </button>
+                </ProtectedMenu>
+                <ProtectedMenu menu="menu.riskAssessment">
+                  <button
+                    className={`role-chip ${activeTab === "risk" ? "active" : ""}`}
+                    onClick={() => setActiveTab("risk")}
+                    style={{ marginBottom: -1, borderRadius: "8px 8px 0 0" }}
+                  >
+                    ⚠️ 风险评估
+                  </button>
+                </ProtectedMenu>
+                <ProtectedMenu menu="menu.goalTracking">
+                  <button
+                    className={`role-chip ${activeTab === "goals" ? "active" : ""}`}
+                    onClick={() => setActiveTab("goals")}
+                    style={{ marginBottom: -1, borderRadius: "8px 8px 0 0" }}
+                  >
+                    🎯 目标追踪
+                  </button>
+                </ProtectedMenu>
+                <ProtectedMenu menu="menu.timeline">
+                  <button
+                    className={`role-chip ${activeTab === "timeline" ? "active" : ""}`}
+                    onClick={() => setActiveTab("timeline")}
+                    style={{ marginBottom: -1, borderRadius: "8px 8px 0 0" }}
+                  >
+                    ⏱️ 时间线
+                  </button>
+                </ProtectedMenu>
+                <ProtectedMenu menu="menu.supervision">
+                  <button
+                    className={`role-chip ${activeTab === "supervision" ? "active" : ""}`}
+                    onClick={() => setActiveTab("supervision")}
+                    style={{ marginBottom: -1, borderRadius: "8px 8px 0 0" }}
+                  >
+                    🏢 督导工作台
+                  </button>
+                </ProtectedMenu>
+                <ProtectedMenu menu="menu.export">
+                  <button
+                    className={`role-chip ${activeTab === "export" ? "active" : ""}`}
+                    onClick={() => setActiveTab("export")}
+                    style={{ marginBottom: -1, borderRadius: "8px 8px 0 0" }}
+                  >
+                    📤 报告导出
+                  </button>
+                </ProtectedMenu>
+                <PermissionGate action="system.reset">
+                  <button
+                    className="role-chip"
+                    onClick={() => handleResetToSampleData()}
+                    style={{ marginLeft: "auto", marginBottom: -1, borderRadius: "8px 8px 0 0" }}
+                  >
+                    🔄 重置数据
+                  </button>
+                </PermissionGate>
               </div>
-              <div className="case-form-actions">
-                <button onClick={handleCancelCaseForm}>取消</button>
-                <button className="primary-action" onClick={handleSaveCaseRecord}>
-                  {editingCaseRecord.id ? "更新记录" : "保存记录"}
-                </button>
-              </div>
-            </div>
-          )}
-        </section>
-        </>
-      ) : (
-        <DataOverviewSection
-          timeline={timeline}
-          assessments={assessments}
-          goals={goals}
-          caseRecords={caseRecords}
-        />
-      )}
-      </section>
 
-      {currentRole !== "admin" && (
-        <>
-          <section className="records panel">
-            <div className="section-heading">
-              <div>
-                <p>个案档案</p>
-                <h2>近期记录</h2>
-                <p className="section-subtitle">
-                  {hasCaseSearchFilters
-                    ? `筛选结果 ${filteredCaseRecords.length} / ${caseRecords.length} 条记录`
-                    : `共 ${caseRecords.length} 条记录，数据已自动保存到本地浏览器`}
-                </p>
-              </div>
-            </div>
-
-            <CaseSearchFilter
-              filters={caseSearchFilters}
-              onFiltersChange={setCaseSearchFilters}
-              onReset={resetCaseSearchFilters}
-              resultCount={filteredCaseRecords.length}
-              totalCount={caseRecords.length}
-              allClientCodes={activeClientCodes}
-              allTopics={caseSearchOptions.topics}
-              allEmotionalStates={caseSearchOptions.emotionalStates}
-              allInterventions={caseSearchOptions.interventions}
-            />
-
-            <div className="record-list">
-              {caseRecords.length === 0 && (
-                <p className="tl-empty">暂无个案记录，点击「新增个案记录」开始录入</p>
-              )}
-              {caseRecords.length > 0 && filteredCaseRecords.length === 0 && (
-                <div className="case-search-empty">
-                  <p className="case-search-empty-icon">🔍</p>
-                  <p className="case-search-empty-text">没有找到匹配的个案记录</p>
-                  <p className="case-search-empty-hint">请尝试调整筛选条件或清除部分关键词</p>
-                  <button className="case-search-empty-btn" onClick={resetCaseSearchFilters}>清除所有筛选</button>
-                </div>
-              )}
-              {filteredCaseRecords
-                .slice()
-                .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))
-                .map((record, index) => {
-                  const riskInfo = latestRiskByClient.get(record.clientCode);
-                  return (
-                    <article key={record.id} className="record-card">
-                      <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-                      <div className="record-body">
-                        <div className="record-header">
-                          <h3>{record.clientCode}</h3>
-                          <span className="record-date">{record.sessionDate}</span>
-                          <span className="record-topic">{record.consultationTopic}</span>
-                          {riskInfo && (
-                            <span className={`risk-badge-inline ${riskLevelColors[riskInfo.level]}`}>
-                              {riskLevelLabels[riskInfo.level]}
-                            </span>
-                          )}
-                        </div>
-                        <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
-                        <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
-                        {record.nextGoal && (
-                          <p className="record-next-goal"><strong>下次目标：</strong>{record.nextGoal}</p>
-                        )}
-                        <div className="record-meta-tags">
-                          <span className="record-meta-tag">{record.emotionalState}</span>
-                        </div>
-                        <div className="record-actions">
-                          <button onClick={() => openEditCaseForm(record)}>编辑</button>
-                          <button className="tl-btn-danger" onClick={() => handleDeleteCaseRecord(record.id)}>删除</button>
-                        </div>
+              {activeTab === "caseRecords" && (
+                <ProtectedMenu menu="menu.caseRecords">
+                  <section>
+                    <div className="section-heading">
+                      <div>
+                        <p>{project.domain}</p>
+                        <h2>个案档案录入</h2>
                       </div>
-                    </article>
-                  );
-                })}
-            </div>
-          </section>
+                      <div className="section-actions">
+                        <ProtectedButton
+                          action="case.create"
+                          className="primary-action"
+                          onClick={openNewCaseForm}
+                        >
+                          新增个案记录
+                        </ProtectedButton>
+                      </div>
+                    </div>
 
-          <RiskAssessmentSection
-            assessments={assessments}
-            onAddAssessment={handleAddAssessment}
-            onDeleteAssessment={handleDeleteAssessment}
-            allClientCodes={activeClientCodes}
-          />
+                    {isCaseFormOpen && editingCaseRecord && (
+                  <div className="case-form-panel">
+                    <div className="case-form-grid">
+                      <label>
+                        <span>来访者代号 *</span>
+                        <ProtectedField field="case.clientCode" label={null}>
+                          <input
+                            value={editingCaseRecord.clientCode}
+                            onChange={e => setEditingCaseRecord({ ...editingCaseRecord, clientCode: e.target.value })}
+                            placeholder="例如：C-042"
+                          />
+                        </ProtectedField>
+                      </label>
+                      <label>
+                        <span>咨询主题 *</span>
+                        <input
+                          value={editingCaseRecord.consultationTopic}
+                          onChange={e => setEditingCaseRecord({ ...editingCaseRecord, consultationTopic: e.target.value })}
+                          placeholder="例如：焦虑障碍"
+                        />
+                      </label>
+                      <label>
+                        <span>会谈日期</span>
+                        <input
+                          type="date"
+                          value={editingCaseRecord.sessionDate}
+                          onChange={e => setEditingCaseRecord({ ...editingCaseRecord, sessionDate: e.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>情绪状态</span>
+                        <select
+                          value={editingCaseRecord.emotionalState}
+                          onChange={e => setEditingCaseRecord({ ...editingCaseRecord, emotionalState: e.target.value })}
+                        >
+                          {emotionalOptions.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="case-form-full">
+                        <span>主要困扰 *</span>
+                        <textarea
+                          value={editingCaseRecord.mainConcern}
+                          onChange={e => setEditingCaseRecord({ ...editingCaseRecord, mainConcern: e.target.value })}
+                          placeholder="描述来访者的主要困扰和问题表现"
+                          rows={2}
+                        />
+                      </label>
+                      <label className="case-form-full">
+                        <span>干预方法 *</span>
+                        <textarea
+                          value={editingCaseRecord.intervention}
+                          onChange={e => setEditingCaseRecord({ ...editingCaseRecord, intervention: e.target.value })}
+                          placeholder="描述本次咨询采用的干预技术和方法"
+                          rows={2}
+                        />
+                      </label>
+                      <label className="case-form-full">
+                        <span>下次目标</span>
+                        <ProtectedField field="case.nextGoal" label={null}>
+                          <textarea
+                            value={editingCaseRecord.nextGoal}
+                            onChange={e => setEditingCaseRecord({ ...editingCaseRecord, nextGoal: e.target.value })}
+                            placeholder="描述下次咨询前的家庭作业或练习目标"
+                            rows={2}
+                          />
+                        </ProtectedField>
+                      </label>
+                    </div>
+                    <div className="case-form-actions">
+                      <button onClick={handleCancelCaseForm}>取消</button>
+                      <ProtectedButton
+                        action={editingCaseRecord.id ? "case.edit" : "case.create"}
+                        className="primary-action"
+                        onClick={handleSaveCaseRecord}
+                      >
+                        {editingCaseRecord.id ? "更新记录" : "保存记录"}
+                      </ProtectedButton>
+                    </div>
+                  </div>
+                )}
+              </section>
 
-          <GoalTrackingSection
-            goals={goals}
-            onAddGoal={handleAddGoal}
-            onUpdateGoal={handleUpdateGoal}
-            onDeleteGoal={handleDeleteGoal}
-            allClientCodes={activeClientCodes}
-          />
+              <section style={{ marginTop: 24 }}>
+                <div className="section-heading">
+                  <div>
+                    <p>个案档案</p>
+                    <h2>近期记录</h2>
+                    <p className="section-subtitle">
+                      {hasCaseSearchFilters
+                        ? `筛选结果 ${filteredCaseRecords.length} / ${caseRecords.length} 条记录`
+                        : `共 ${caseRecords.length} 条记录，数据已自动保存到本地浏览器`}
+                    </p>
+                  </div>
+                </div>
 
-          <TimelineSection
-            clientCodes={activeClientCodes}
-            records={timeline}
-            onAddRecord={handleAddTimeline}
-            onUpdateRecord={handleUpdateTimeline}
-            onDeleteRecord={handleDeleteTimeline}
-          />
+                <CaseSearchFilter
+                  filters={caseSearchFilters}
+                  onFiltersChange={setCaseSearchFilters}
+                  onReset={resetCaseSearchFilters}
+                  resultCount={filteredCaseRecords.length}
+                  totalCount={caseRecords.length}
+                  allClientCodes={activeClientCodes}
+                  allTopics={caseSearchOptions.topics}
+                  allEmotionalStates={caseSearchOptions.emotionalStates}
+                  allInterventions={caseSearchOptions.interventions}
+                />
 
-          <SupervisionWorkbench
-            records={supervisionRecords}
-            role={currentRole}
-            onRoleChange={handleRoleChange}
-            onAddRecord={handleAddSupervisionRecord}
-            onUpdateRecord={handleUpdateSupervisionRecord}
-            onSubmitForSupervision={handleSubmitForSupervision}
-            onSaveDraft={handleSaveDraft}
-            onAddFeedback={handleAddFeedback}
-          />
+                <div className="record-list">
+                  {caseRecords.length === 0 && (
+                    <p className="tl-empty">暂无个案记录，点击「新增个案记录」开始录入</p>
+                  )}
+                  {caseRecords.length > 0 && filteredCaseRecords.length === 0 && (
+                    <div className="case-search-empty">
+                      <p className="case-search-empty-icon">🔍</p>
+                      <p className="case-search-empty-text">没有找到匹配的个案记录</p>
+                      <p className="case-search-empty-hint">请尝试调整筛选条件或清除部分关键词</p>
+                      <button className="case-search-empty-btn" onClick={resetCaseSearchFilters}>清除所有筛选</button>
+                    </div>
+                  )}
+                  {filteredCaseRecords
+                    .slice()
+                    .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate))
+                    .map((record, index) => {
+                      const riskInfo = latestRiskByClient.get(record.clientCode);
+                      return (
+                        <article key={record.id} className="record-card">
+                          <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
+                          <div className="record-body">
+                            <div className="record-header">
+                              <h3>{record.clientCode}</h3>
+                              <span className="record-date">{record.sessionDate}</span>
+                              <span className="record-topic">{record.consultationTopic}</span>
+                              {riskInfo && (
+                                <span className={`risk-badge-inline ${riskLevelColors[riskInfo.level]}`}>
+                                  {riskLevelLabels[riskInfo.level]}
+                                </span>
+                              )}
+                            </div>
+                            <p className="record-main-concern"><strong>主要困扰：</strong>{record.mainConcern}</p>
+                            <p className="record-intervention"><strong>干预方法：</strong>{record.intervention}</p>
+                            {record.nextGoal && (
+                              <ProtectedField field="case.nextGoal" label={null}>
+                                <p className="record-next-goal"><strong>下次目标：</strong>{record.nextGoal}</p>
+                              </ProtectedField>
+                            )}
+                            <div className="record-meta-tags">
+                              <span className="record-meta-tag">{record.emotionalState}</span>
+                            </div>
+                            <div className="record-actions">
+                              <ProtectedButton
+                                action="case.edit"
+                                className="link"
+                                onClick={() => openEditCaseForm(record)}
+                              >
+                                编辑
+                              </ProtectedButton>
+                              <ProtectedButton
+                                action="case.delete"
+                                className="link tl-btn-danger"
+                                onClick={() => {
+                                  if (confirm("确定删除此个案记录吗？")) handleDeleteCaseRecord(record.id);
+                                }}
+                              >
+                                删除
+                              </ProtectedButton>
+                            </div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                </div>
+              </section>
+                </ProtectedMenu>
+              )}
 
-          <SessionSummaryExport
-            clientCodes={activeClientCodes}
-            timeline={timeline}
-            assessments={assessments}
-            goals={goals}
-            caseRecords={caseRecords}
-            onToast={showToast}
-          />
-        </>
-      )}
+              {activeTab === "risk" && (
+                <ProtectedMenu menu="menu.riskAssessment">
+                  <RiskAssessmentSection
+                    assessments={assessments}
+                    onAddAssessment={handleAddAssessment}
+                    onDeleteAssessment={handleDeleteAssessment}
+                    allClientCodes={activeClientCodes}
+                  />
+                </ProtectedMenu>
+              )}
+
+              {activeTab === "goals" && (
+                <ProtectedMenu menu="menu.goalTracking">
+                  <GoalTrackingSection
+                    goals={goals}
+                    onAddGoal={handleAddGoal}
+                    onUpdateGoal={handleUpdateGoal}
+                    onDeleteGoal={handleDeleteGoal}
+                    allClientCodes={activeClientCodes}
+                  />
+                </ProtectedMenu>
+              )}
+
+              {activeTab === "timeline" && (
+                <ProtectedMenu menu="menu.timeline">
+                  <TimelineSection
+                    clientCodes={activeClientCodes}
+                    records={timeline}
+                    onAddRecord={handleAddTimeline}
+                    onUpdateRecord={handleUpdateTimeline}
+                    onDeleteRecord={handleDeleteTimeline}
+                  />
+                </ProtectedMenu>
+              )}
+
+              {activeTab === "supervision" && (
+                <ProtectedMenu menu="menu.supervision">
+                  <SupervisionWorkbench
+                    records={supervisionRecords}
+                    role={currentRole}
+                    onRoleChange={handleRoleChange}
+                    onAddRecord={handleAddSupervisionRecord}
+                    onUpdateRecord={handleUpdateSupervisionRecord}
+                    onSubmitForSupervision={handleSubmitForSupervision}
+                    onSaveDraft={handleSaveDraft}
+                    onAddFeedback={handleAddFeedback}
+                  />
+                </ProtectedMenu>
+              )}
+
+              {activeTab === "export" && (
+                <ProtectedMenu menu="menu.export">
+                  <SessionSummaryExport
+                    clientCodes={activeClientCodes}
+                    timeline={timeline}
+                    assessments={assessments}
+                    goals={goals}
+                    caseRecords={caseRecords}
+                    onToast={showToast}
+                  />
+                </ProtectedMenu>
+              )}
+
+              <PermissionGate action="data.overview">
+                <DataOverviewSection
+                  timeline={timeline}
+                  assessments={assessments}
+                  goals={goals}
+                  caseRecords={caseRecords}
+                />
+              </PermissionGate>
+            </>
+          )}
+        </div>
+      </section>
     </main>
   );
 }
