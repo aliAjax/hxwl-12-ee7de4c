@@ -5543,3 +5543,387 @@ button:disabled {
   }
 }
 
+.todo-reminder-toggle-row {
+  margin-bottom: 12px;
+}
+
+.todo-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #fef2f2 0%, #fff7ed 50%, #fefce8 100%);
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #991b1b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.todo-toggle-btn:hover {
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.15);
+  border-color: #fca5a5;
+}
+
+.todo-toggle-btn.active {
+  background: linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%);
+  border-color: #f87171;
+}
+
+.todo-toggle-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  background: #ef4444;
+  color: #fff;
+  border-radius: 11px;
+  font-size: 12px;
+  font-weight: 700;
+  animation: todo-badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes todo-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.todo-expand-arrow {
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 0.2s ease;
+  color: #94a3b8;
+}
+
+.todo-expand-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+.todo-reminder-panel {
+  background: linear-gradient(135deg, #fefce8 0%, #fff7ed 30%, #fef2f2 100%);
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+}
+
+.todo-reminder-header {
+  margin-bottom: 16px;
+}
+
+.todo-reminder-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.todo-reminder-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.todo-reminder-total {
+  font-size: 13px;
+  font-weight: 600;
+  color: #b91c1c;
+  padding: 3px 12px;
+  background: #fef2f2;
+  border-radius: 999px;
+  border: 1px solid #fecaca;
+}
+
+.todo-reminder-filters {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.todo-reminder-client-filter {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.todo-filter-chip {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: auto;
+}
+
+.todo-filter-chip:hover {
+  border-color: #cbd5e1;
+  color: #475569;
+}
+
+.todo-filter-chip.active {
+  background: #7c3aed;
+  border-color: #7c3aed;
+  color: #fff;
+}
+
+.todo-reminder-counts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.todo-count-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.todo-count-overdue {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.todo-count-due-soon {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+}
+
+.todo-count-stale {
+  background: #fff7ed;
+  color: #ea580c;
+  border: 1px solid #fed7aa;
+}
+
+.todo-reminder-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 0;
+}
+
+.todo-reminder-empty-icon {
+  font-size: 32px;
+}
+
+.todo-reminder-empty-text {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0;
+}
+
+.todo-reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.todo-reminder-card {
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.todo-reminder-card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.todo-reminder-card.todo-type-overdue {
+  border: 1px solid #fecaca;
+  border-left: 4px solid #ef4444;
+}
+
+.todo-reminder-card.todo-type-due-soon {
+  border: 1px solid #fde68a;
+  border-left: 4px solid #f59e0b;
+}
+
+.todo-reminder-card.todo-type-stale {
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #f97316;
+}
+
+.todo-reminder-card-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  cursor: pointer;
+  gap: 12px;
+}
+
+.todo-reminder-card-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-type-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.todo-reminder-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.todo-reminder-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.todo-type-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.todo-type-label.todo-type-overdue {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.todo-type-label.todo-type-due-soon {
+  background: #fffbeb;
+  color: #d97706;
+}
+
+.todo-type-label.todo-type-stale {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.todo-reminder-client {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.todo-reminder-goal-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.todo-reminder-detail {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.todo-reminder-progress {
+  max-width: 280px;
+}
+
+.todo-reminder-actions {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
+  flex-wrap: wrap;
+}
+
+.todo-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+}
+
+.todo-action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.todo-action-btn.todo-action-complete {
+  background: #ecfdf5;
+  color: #059669;
+  border-color: #a7f3d0;
+}
+
+.todo-action-btn.todo-action-complete:hover {
+  background: #d1fae5;
+}
+
+.todo-action-btn.todo-action-extend {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+.todo-action-btn.todo-action-extend:hover {
+  background: #dbeafe;
+}
+
+.todo-action-btn.todo-action-advance {
+  background: #f5f3ff;
+  color: #7c3aed;
+  border-color: #ddd6fe;
+}
+
+.todo-action-btn.todo-action-advance:hover {
+  background: #ede9fe;
+}
+
+@media (max-width: 768px) {
+  .todo-reminder-filters {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .todo-reminder-counts {
+    width: 100%;
+  }
+
+  .todo-reminder-card-main {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .todo-reminder-actions {
+    flex-direction: column;
+  }
+
+  .todo-action-btn {
+    justify-content: center;
+  }
+}
+

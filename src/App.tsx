@@ -553,7 +553,7 @@ const initialGoals: InterventionGoal[] = [
     lastAction: "学习识别灾难化思维模式",
     lastActionDate: "2026-06-03",
     nextPractice: "完成思维记录表中的反驳栏填写",
-    nextPracticeDate: "2026-06-17",
+    nextPracticeDate: "2026-06-15",
     createdAt: "2026-06-03"
   },
   {
@@ -567,7 +567,7 @@ const initialGoals: InterventionGoal[] = [
     lastAction: "在会谈中角色扮演表达感受",
     lastActionDate: "2026-06-09",
     nextPractice: "与伴侣尝试一次非暴力沟通对话",
-    nextPracticeDate: "2026-06-16",
+    nextPracticeDate: "2026-06-21",
     createdAt: "2026-05-26"
   },
   {
@@ -1219,6 +1219,246 @@ function RiskAssessmentSection({
   );
 }
 
+type ReminderType = "overdue" | "dueSoon" | "stale";
+
+interface ReminderItem {
+  goal: InterventionGoal;
+  type: ReminderType;
+  label: string;
+  detail: string;
+}
+
+function classifyReminders(goals: InterventionGoal[], clientCode: string | null): ReminderItem[] {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const threeDaysLater = new Date(now);
+  threeDaysLater.setDate(now.getDate() + 3);
+  const staleThreshold = new Date(now);
+  staleThreshold.setDate(now.getDate() - 14);
+
+  const items: ReminderItem[] = [];
+  const typeOrder: Record<ReminderType, number> = { overdue: 0, dueSoon: 1, stale: 2 };
+
+  const relevant = goals.filter(g => {
+    if (g.status === "completed") return false;
+    if (clientCode && g.clientCode !== clientCode) return false;
+    return true;
+  });
+
+  for (const g of relevant) {
+    if (g.nextPracticeDate && g.status === "active") {
+      const practiceDate = new Date(g.nextPracticeDate);
+      practiceDate.setHours(0, 0, 0, 0);
+      if (practiceDate < now) {
+        const diffDays = Math.floor((now.getTime() - practiceDate.getTime()) / (1000 * 60 * 60 * 24));
+        items.push({
+          goal: g,
+          type: "overdue",
+          label: "逾期练习",
+          detail: `练习「${g.nextPractice}」已逾期 ${diffDays} 天（应于 ${g.nextPracticeDate} 完成）`,
+        });
+      } else if (practiceDate <= threeDaysLater) {
+        const diffDays = Math.ceil((practiceDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        items.push({
+          goal: g,
+          type: "dueSoon",
+          label: "即将到期",
+          detail: `练习「${g.nextPractice}」将在 ${diffDays} 天内到期（${g.nextPracticeDate}）`,
+        });
+      }
+    }
+
+    if (g.status === "active" && g.lastActionDate) {
+      const lastDate = new Date(g.lastActionDate);
+      lastDate.setHours(0, 0, 0, 0);
+      if (lastDate < staleThreshold) {
+        const diffDays = Math.floor((now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+        const alreadyOverdue = items.some(r => r.goal.id === g.id && r.type === "overdue");
+        if (!alreadyOverdue) {
+          items.push({
+            goal: g,
+            type: "stale",
+            label: "长期未更新",
+            detail: `目标「${g.goalTitle}」已 ${diffDays} 天无更新（上次行动 ${g.lastActionDate}）`,
+          });
+        }
+      }
+    }
+  }
+
+  items.sort((a, b) => {
+    if (typeOrder[a.type] !== typeOrder[b.type]) return typeOrder[a.type] - typeOrder[b.type];
+    if (a.type === "overdue" && b.type === "overdue") {
+      return a.goal.nextPracticeDate.localeCompare(b.goal.nextPracticeDate);
+    }
+    return 0;
+  });
+
+  return items;
+}
+
+function TodoReminderView({
+  goals,
+  onQuickAction,
+  allClientCodes,
+}: {
+  goals: InterventionGoal[];
+  onQuickAction: (goal: InterventionGoal, action: "complete" | "extend" | "advance") => void;
+  allClientCodes: string[];
+}) {
+  const [clientFilter, setClientFilter] = useState<string | null>(null);
+  const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null);
+
+  const reminders = useMemo(() => classifyReminders(goals, clientFilter), [goals, clientFilter]);
+
+  const counts = useMemo(() => ({
+    overdue: reminders.filter(r => r.type === "overdue").length,
+    dueSoon: reminders.filter(r => r.type === "dueSoon").length,
+    stale: reminders.filter(r => r.type === "stale").length,
+  }), [reminders]);
+
+  const typeIcon: Record<ReminderType, string> = {
+    overdue: "🔴",
+    dueSoon: "🟡",
+    stale: "🟠",
+  };
+
+  const typeClass: Record<ReminderType, string> = {
+    overdue: "todo-type-overdue",
+    dueSoon: "todo-type-due-soon",
+    stale: "todo-type-stale",
+  };
+
+  return (
+    <div className="todo-reminder-panel">
+      <div className="todo-reminder-header">
+        <div className="todo-reminder-title-row">
+          <h3 className="todo-reminder-title">📋 待办提醒</h3>
+          <span className="todo-reminder-total">{reminders.length} 项待处理</span>
+        </div>
+        <div className="todo-reminder-filters">
+          <div className="todo-reminder-client-filter">
+            <button
+              className={`todo-filter-chip ${clientFilter === null ? "active" : ""}`}
+              onClick={() => setClientFilter(null)}
+            >
+              全部来访者
+            </button>
+            {allClientCodes.map(code => (
+              <button
+                key={code}
+                className={`todo-filter-chip ${clientFilter === code ? "active" : ""}`}
+                onClick={() => setClientFilter(code)}
+              >
+                {code}
+              </button>
+            ))}
+          </div>
+          <div className="todo-reminder-counts">
+            <span className="todo-count-badge todo-count-overdue">{counts.overdue} 逾期</span>
+            <span className="todo-count-badge todo-count-due-soon">{counts.dueSoon} 即将到期</span>
+            <span className="todo-count-badge todo-count-stale">{counts.stale} 长期未更新</span>
+          </div>
+        </div>
+      </div>
+
+      {reminders.length === 0 ? (
+        <div className="todo-reminder-empty">
+          <span className="todo-reminder-empty-icon">✅</span>
+          <p className="todo-reminder-empty-text">暂无待办提醒，所有目标进展正常</p>
+        </div>
+      ) : (
+        <div className="todo-reminder-list">
+          {reminders.map(rem => {
+            const isExpanded = expandedGoalId === rem.goal.id;
+            const pct = rem.goal.totalSteps > 0 ? Math.round((rem.goal.completedSteps / rem.goal.totalSteps) * 100) : 0;
+            return (
+              <article
+                key={`${rem.goal.id}-${rem.type}`}
+                className={`todo-reminder-card ${typeClass[rem.type]}`}
+              >
+                <div
+                  className="todo-reminder-card-main"
+                  onClick={() => setExpandedGoalId(isExpanded ? null : rem.goal.id)}
+                >
+                  <div className="todo-reminder-card-left">
+                    <span className="todo-type-icon">{typeIcon[rem.type]}</span>
+                    <div className="todo-reminder-card-info">
+                      <div className="todo-reminder-card-top">
+                        <span className={`todo-type-label ${typeClass[rem.type]}`}>{rem.label}</span>
+                        <span className="todo-reminder-client">{rem.goal.clientCode}</span>
+                        <span className="todo-reminder-goal-name">{rem.goal.goalTitle}</span>
+                      </div>
+                      <p className="todo-reminder-detail">{rem.detail}</p>
+                      <div className="todo-reminder-progress">
+                        <div className="goal-progress-bar">
+                          <div
+                            className="goal-progress-fill"
+                            style={{ width: `${pct}%` }}
+                          />
+                          <span className="goal-progress-text">
+                            {rem.goal.completedSteps}/{rem.goal.totalSteps} · {pct}%
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <span className={`todo-expand-arrow ${isExpanded ? "expanded" : ""}`}>▼</span>
+                </div>
+
+                {isExpanded && (
+                  <div className="todo-reminder-actions">
+                    {rem.type === "overdue" && (
+                      <>
+                        <button
+                          className="todo-action-btn todo-action-complete"
+                          onClick={() => onQuickAction(rem.goal, "complete")}
+                        >
+                          ✅ 标记练习已完成
+                        </button>
+                        <button
+                          className="todo-action-btn todo-action-extend"
+                          onClick={() => onQuickAction(rem.goal, "extend")}
+                        >
+                          📅 延期至下周
+                        </button>
+                      </>
+                    )}
+                    {rem.type === "dueSoon" && (
+                      <>
+                        <button
+                          className="todo-action-btn todo-action-complete"
+                          onClick={() => onQuickAction(rem.goal, "complete")}
+                        >
+                          ✅ 提前完成练习
+                        </button>
+                        <button
+                          className="todo-action-btn todo-action-extend"
+                          onClick={() => onQuickAction(rem.goal, "extend")}
+                        >
+                          📅 延期一周
+                        </button>
+                      </>
+                    )}
+                    {rem.type === "stale" && (
+                      <button
+                        className="todo-action-btn todo-action-advance"
+                        onClick={() => onQuickAction(rem.goal, "advance")}
+                      >
+                        ⏩ 推进一步并更新
+                      </button>
+                    )}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GoalTrackingSection({
   goals,
   onAddGoal,
@@ -1236,6 +1476,7 @@ function GoalTrackingSection({
   const [statusFilter, setStatusFilter] = useState<GoalStatus | "all">("all");
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<InterventionGoal | null>(null);
+  const [showReminder, setShowReminder] = useState(true);
 
   const availableCodes = Array.from(new Set([...allClientCodes, ...goals.map(g => g.clientCode)])).sort();
 
@@ -1320,6 +1561,49 @@ function GoalTrackingSection({
     setEditingGoal(null);
   };
 
+  const handleQuickAction = (goal: InterventionGoal, action: "complete" | "extend" | "advance") => {
+    const today = new Date().toISOString().slice(0, 10);
+    const nextWeek = new Date();
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const nextWeekStr = nextWeek.toISOString().slice(0, 10);
+
+    if (action === "complete") {
+      const newCompleted = Math.min(goal.completedSteps + 1, goal.totalSteps);
+      const newStatus: GoalStatus = newCompleted >= goal.totalSteps ? "completed" : goal.status;
+      const updated: InterventionGoal = {
+        ...goal,
+        completedSteps: newCompleted,
+        status: newStatus,
+        lastAction: goal.nextPractice || "完成一次练习",
+        lastActionDate: today,
+        nextPractice: "",
+        nextPracticeDate: "",
+      };
+      if (newStatus === "completed") {
+        updated.nextPractice = "";
+        updated.nextPracticeDate = "";
+      }
+      onUpdateGoal(updated);
+    } else if (action === "extend") {
+      const updated: InterventionGoal = {
+        ...goal,
+        nextPracticeDate: nextWeekStr,
+      };
+      onUpdateGoal(updated);
+    } else if (action === "advance") {
+      const newCompleted = Math.min(goal.completedSteps + 1, goal.totalSteps);
+      const newStatus: GoalStatus = newCompleted >= goal.totalSteps ? "completed" : goal.status;
+      const updated: InterventionGoal = {
+        ...goal,
+        completedSteps: newCompleted,
+        status: newStatus,
+        lastAction: "推进一个步骤",
+        lastActionDate: today,
+      };
+      onUpdateGoal(updated);
+    }
+  };
+
   const updateField = <K extends keyof InterventionGoal>(field: K, value: InterventionGoal[K]) => {
     if (!editingGoal) return;
     setEditingGoal({ ...editingGoal, [field]: value });
@@ -1385,6 +1669,28 @@ function GoalTrackingSection({
           <strong className="goal-summary-value">{progressSummary.completedSteps}/{progressSummary.totalSteps}</strong>
         </div>
       </div>
+
+      <div className="todo-reminder-toggle-row">
+        <button
+          className={`todo-toggle-btn ${showReminder ? "active" : ""}`}
+          onClick={() => setShowReminder(!showReminder)}
+        >
+          📋 待办提醒
+          {(() => {
+            const cnt = classifyReminders(goals, null).length;
+            return cnt > 0 ? <span className="todo-toggle-badge">{cnt}</span> : null;
+          })()}
+          <span className={`todo-expand-arrow ${showReminder ? "expanded" : ""}`}>▼</span>
+        </button>
+      </div>
+
+      {showReminder && (
+        <TodoReminderView
+          goals={goals}
+          onQuickAction={handleQuickAction}
+          allClientCodes={availableCodes}
+        />
+      )}
 
       <div className="goal-status-tabs">
         {(["all", "active", "paused", "completed"] as const).map(s => (
