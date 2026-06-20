@@ -4469,6 +4469,24 @@ function App() {
     );
   }, [caseRecords, timeline, assessments, goals, supervisionRecords, crisisWarnings, currentRole]);
 
+  const exportData = useMemo(() => {
+    if (currentRole === "admin") {
+      return {
+        caseRecords,
+        timeline,
+        assessments,
+        goals,
+      };
+    }
+
+    return {
+      caseRecords: filteredData.caseRecords,
+      timeline: filteredData.timeline,
+      assessments: filteredData.assessments,
+      goals: filteredData.goals,
+    };
+  }, [currentRole, caseRecords, timeline, assessments, goals, filteredData]);
+
   const displayClientCodes = useMemo(() => {
     return getActiveClientCodes(
       filteredData,
@@ -5841,10 +5859,10 @@ function App() {
                 <ProtectedMenu menu="menu.export">
                   <SessionSummaryExport
                     clientCodes={displayClientCodes}
-                    timeline={filteredData.timeline}
-                    assessments={filteredData.assessments}
-                    goals={filteredData.goals}
-                    caseRecords={filteredData.caseRecords}
+                    timeline={exportData.timeline}
+                    assessments={exportData.assessments}
+                    goals={exportData.goals}
+                    caseRecords={exportData.caseRecords}
                     onToast={showToast}
                   />
                 </ProtectedMenu>
