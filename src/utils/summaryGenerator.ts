@@ -5,6 +5,7 @@ import type {
   CaseRecord,
   RiskLevel,
   GoalStatus,
+  RiskDimensions,
 } from "../App";
 import { desensitizeText, getMaskedItemLabel, type MaskedItemInfo } from "./desensitize";
 import type { UserRole } from "../auth/roleConfig";
@@ -915,7 +916,16 @@ export function generateSupervisionDraft(input: SupervisionDraftInput): Generate
     .filter(a => a.clientCode === clientCode && isDateInRange(a.assessDate, startDate, endDate))
     .sort((a, b) => a.assessDate.localeCompare(b.assessDate));
 
-  const filteredGoals = goals.filter(g => g.clientCode === clientCode);
+  const filteredGoals = goals
+    .filter(g => g.clientCode === clientCode)
+    .filter(g => {
+      if (startDate || endDate) {
+        return isDateInRange(g.createdAt, startDate, endDate) ||
+          isDateInRange(g.lastActionDate, startDate, endDate) ||
+          g.status === "active";
+      }
+      return true;
+    });
 
   const filteredCaseRecords = caseRecords
     .filter(r => r.clientCode === clientCode && isDateInRange(r.sessionDate, startDate, endDate))
