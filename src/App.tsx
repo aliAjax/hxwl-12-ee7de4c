@@ -21,29 +21,10 @@ import {
   type PermissionAction,
 } from "./auth";
 import {
-  loadAllData,
-  saveTimelineRecord,
-  deleteTimelineRecord as dbDeleteTimeline,
-  saveRiskAssessment,
-  deleteRiskAssessment as dbDeleteRisk,
-  saveGoal,
-  deleteGoal as dbDeleteGoal,
-  saveCounters,
-  saveCaseRecord,
-  deleteCaseRecord as dbDeleteCaseRecord,
-  saveCrisisWarning,
-  deleteCrisisWarning as dbDeleteCrisisWarning,
-  getDBStatus,
-  addDBListener,
-  resetToSampleData,
-  checkDBSupport,
-  loadCrisisStrategy,
-  saveCrisisStrategy,
-  type AppData,
-  type DBStatus,
   type DBEventType,
 } from "./db";
 import { generateSupervisionDraft, type GeneratedSupervisionDraft } from "./utils/summaryGenerator";
+import { useAppData } from "./hooks/useAppData";
 
 const project = {
   "id": "hxwl-12",
@@ -4896,16 +4877,7 @@ function App() {
   const { currentRole, switchRole, session, hasPermission: hasPerm, assertPermission: assertPerm } = useAuth();
   const [activeTab, setActiveTab] = useState<AppTab>("caseRecords");
   const [exportSubTab, setExportSubTab] = useState<ExportSubTab>("generate");
-  const [timeline, setTimeline] = useState<TimelineRecord[]>(initialTimelineData);
-  const [assessments, setAssessments] = useState<RiskAssessment[]>(initialRiskAssessments);
-  const [goals, setGoals] = useState<InterventionGoal[]>(initialGoals);
-  const [caseRecords, setCaseRecords] = useState<CaseRecord[]>(initialCaseRecords);
-  const [supervisionRecords, setSupervisionRecords] = useState<SupervisionRecord[]>(initialSupervisionRecords);
-  const [crisisWarnings, setCrisisWarnings] = useState<CrisisWarning[]>(initialCrisisWarnings);
-  const [crisisStrategy, setCrisisStrategy] = useState<CrisisStrategy>(DEFAULT_CRISIS_STRATEGY);
-  const [isLoading, setIsLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [dbStatus, setDbStatus] = useState<DBStatus>({ isSupported: true, isConnected: false, version: 0 });
   const [showDBUpgradeNotice, setShowDBUpgradeNotice] = useState(false);
   const [caseFormData, setCaseFormData] = useState<Record<string, string>>({});
   const [editingCaseRecord, setEditingCaseRecord] = useState<CaseRecord | null>(null);
@@ -4921,8 +4893,6 @@ function App() {
     keyword: "",
   });
   const toastIdRef = useRef(0);
-  const isLoadedRef = useRef(false);
-  const isDBSupported = useMemo(() => checkDBSupport(), []);
 
   const showToast = useCallback((message: string, type: Toast["type"] = "error") => {
     const id = ++toastIdRef.current;
@@ -4931,6 +4901,87 @@ function App() {
       setToasts(prev => prev.filter(t => t.id !== id));
     }, 3500);
   }, []);
+
+  const handleDBEvent = useCallback((event: DBEventType, data?: unknown) => {
+    if (event === "upgrade") {
+      const upgradeData = data as { from?: number; to?: number; reason?: string };
+      if (upgradeData.reason === "versionchange") {
+        showToast("数据库版本已更新，请刷新页面以获取最新功能", "info");
+      } else if (upgradeData.from !== undefined && upgradeData.to !== undefined) {
+        setShowDBUpgradeNotice(true);
+        showToast(`数据库已从 v${upgradeData.from} 升级到 v${upgradeData.to}`, "success");
+      }
+    } else if (event === "blocked") {
+      showToast("数据库升级被阻塞，请关闭其他标签页后刷新", "error");
+    } else if (event === "error") {
+      const error = data as Error;
+      console.error("[DB] 数据库错误:", error);
+      showToast(error?.message || "数据库操作出错", "error");
+    }
+  }, [showToast]);
+
+  const {
+    timeline,
+    assessments,
+    goals,
+    caseRecords,
+    supervisionRecords,
+    crisisWarnings,
+    crisisStrategy,
+    isLoading,
+    dbStatus,
+    isDBSupported,
+    addTimeline,
+    updateTimeline,
+    deleteTimeline,
+    addAssessment,
+    deleteAssessment,
+    addGoal,
+    updateGoal,
+    deleteGoal,
+    addCaseRecord,
+    updateCaseRecord,
+    deleteCaseRecord,
+    addSupervisionRecord: appDataAddSupervisionRecord,
+    updateSupervisionRecord: appDataUpdateSupervisionRecord,
+    submitForSupervision: appDataSubmitForSupervision,
+    addFeedback: appDataAddFeedback,
+    addCrisisWarning,
+    updateCrisisWarning,
+    deleteCrisisWarning,
+    saveCrisisStrategy,
+    resetToSampleData,
+    refreshFromDB,
+    generateTimelineId,
+    generateRiskId,
+    generateGoalId,
+    generateCaseRecordId,
+    generateCrisisWarningId,
+    generateSupervisionId,
+    generateFeedbackId,
+    generateClipId,
+    generateCrisisWarningActionId,
+    getCounters,
+  } = useAppData({
+    onError: (msg) => showToast(msg, "error"),
+    onSuccess: (msg) => showToast(msg, "success"),
+    onDBEvent: handleDBEvent,
+  });
+
+  useEffect(() => {
+    if (!isLoading) {
+      const counters = getCounters();
+      nextTimelineId = counters.nextTimelineId;
+      nextRiskId = counters.nextRiskId;
+      nextGoalId = counters.nextGoalId;
+      nextCaseRecordId = counters.nextCaseRecordId;
+      nextCrisisWarningId = counters.nextCrisisWarningId;
+      nextCrisisWarningActionId = counters.nextCrisisWarningActionId;
+      nextSupervisionId = counters.nextSupervisionId;
+      nextFeedbackId = counters.nextFeedbackId;
+      nextClipId = counters.nextClipId;
+    }
+  }, [isLoading, getCounters]);
 
   const createAudit = useCallback((params: {
     action: Parameters<typeof createAuditLog>[0]["action"];
@@ -5012,194 +5063,6 @@ function App() {
     );
   }, [filteredData, caseRecords, timeline, assessments, goals]);
 
-  const handleDBEvent = useCallback((event: DBEventType, data?: unknown) => {
-    if (event === "upgrade") {
-      const upgradeData = data as { from?: number; to?: number; reason?: string };
-      if (upgradeData.reason === "versionchange") {
-        showToast("数据库版本已更新，请刷新页面以获取最新功能", "info");
-      } else if (upgradeData.from !== undefined && upgradeData.to !== undefined) {
-        setShowDBUpgradeNotice(true);
-        showToast(`数据库已从 v${upgradeData.from} 升级到 v${upgradeData.to}`, "success");
-      }
-    } else if (event === "blocked") {
-      showToast("数据库升级被阻塞，请关闭其他标签页后刷新", "error");
-    } else if (event === "error") {
-      const error = data as Error;
-      console.error("[DB] 数据库错误:", error);
-      showToast(error?.message || "数据库操作出错", "error");
-    } else if (event === "success") {
-      const successData = data as { version?: number };
-      if (successData?.version) {
-        setDbStatus(prev => ({ ...prev, version: successData.version!, isConnected: true }));
-      }
-    }
-  }, [showToast]);
-
-  useEffect(() => {
-    const removeListener = addDBListener(handleDBEvent);
-
-    (async () => {
-      const status = await getDBStatus();
-      setDbStatus(status);
-      if (!status.isSupported) {
-        showToast("当前浏览器不支持离线存储功能，请使用现代浏览器", "error");
-      }
-    })();
-
-    return () => { removeListener(); };
-  }, [handleDBEvent, showToast]);
-
-  useEffect(() => {
-    if (isLoadedRef.current) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const data = await loadAllData(
-          initialTimelineData,
-          initialRiskAssessments,
-          initialGoals,
-          initialCaseRecords,
-          initialCrisisWarnings,
-          nextTimelineId,
-          nextRiskId,
-          nextGoalId,
-          nextCaseRecordId,
-          nextCrisisWarningId
-        );
-        if (cancelled) return;
-        setTimeline(data.timeline);
-        setAssessments(data.riskAssessments);
-        setGoals(data.goals);
-        setCaseRecords(data.caseRecords);
-        setCrisisWarnings(data.crisisWarnings);
-        nextTimelineId = data.nextTimelineId;
-        nextRiskId = data.nextRiskId;
-        nextGoalId = data.nextGoalId;
-        nextCaseRecordId = data.nextCaseRecordId;
-        nextCrisisWarningId = data.nextCrisisWarningId;
-        try {
-          const savedStrategy = await loadCrisisStrategy(DEFAULT_CRISIS_STRATEGY);
-          setCrisisStrategy(savedStrategy);
-        } catch (e) {
-          console.warn("[DB] 加载预警策略失败，使用默认策略:", e);
-        }
-        isLoadedRef.current = true;
-        setIsLoading(false);
-        showToast("个案档案数据加载完成", "success");
-      } catch (err) {
-        if (cancelled) return;
-        console.error("[DB] 加载数据失败:", err);
-        const errorMsg = err instanceof Error ? err.message : "未知错误";
-        showToast(`数据加载失败：${errorMsg}，已使用本地示例数据`, "error");
-        isLoadedRef.current = true;
-        setIsLoading(false);
-      }
-    })();
-
-    return () => { cancelled = true; };
-  }, [showToast]);
-
-  const persistTimeline = useCallback(async (records: TimelineRecord[]) => {
-    try {
-      for (const r of records) {
-        await saveTimelineRecord(r);
-      }
-    } catch (err) {
-      console.error("[DB] 保存时间线失败:", err);
-      showToast("时间线数据保存失败，请检查浏览器存储");
-    }
-  }, [showToast]);
-
-  const persistTimelineDelete = useCallback(async (id: string) => {
-    try {
-      await dbDeleteTimeline(id);
-    } catch (err) {
-      console.error("[DB] 删除时间线记录失败:", err);
-      showToast("删除时间线记录失败");
-    }
-  }, [showToast]);
-
-  const persistAssessment = useCallback(async (a: RiskAssessment) => {
-    try {
-      await saveRiskAssessment(a);
-    } catch (err) {
-      console.error("[DB] 保存风险评估失败:", err);
-      showToast("风险评估数据保存失败");
-    }
-  }, [showToast]);
-
-  const persistAssessmentDelete = useCallback(async (id: string) => {
-    try {
-      await dbDeleteRisk(id);
-    } catch (err) {
-      console.error("[DB] 删除风险评估失败:", err);
-      showToast("删除风险评估记录失败");
-    }
-  }, [showToast]);
-
-  const persistGoal = useCallback(async (g: InterventionGoal) => {
-    try {
-      await saveGoal(g);
-    } catch (err) {
-      console.error("[DB] 保存目标失败:", err);
-      showToast("目标数据保存失败");
-    }
-  }, [showToast]);
-
-  const persistGoalDelete = useCallback(async (id: string) => {
-    try {
-      await dbDeleteGoal(id);
-    } catch (err) {
-      console.error("[DB] 删除目标失败:", err);
-      showToast("删除目标记录失败");
-    }
-  }, [showToast]);
-
-  const persistCaseRecord = useCallback(async (record: CaseRecord) => {
-    try {
-      await saveCaseRecord(record);
-    } catch (err) {
-      console.error("[DB] 保存个案记录失败:", err);
-      showToast("个案记录保存失败");
-    }
-  }, [showToast]);
-
-  const persistCaseRecordDelete = useCallback(async (id: string) => {
-    try {
-      await dbDeleteCaseRecord(id);
-    } catch (err) {
-      console.error("[DB] 删除个案记录失败:", err);
-      showToast("删除个案记录失败");
-    }
-  }, [showToast]);
-
-  const persistCounters = useCallback(async () => {
-    try {
-      await saveCounters(nextTimelineId, nextRiskId, nextGoalId, nextCaseRecordId, nextCrisisWarningId);
-    } catch (err) {
-      console.error("[DB] 保存计数器失败:", err);
-    }
-  }, [showToast]);
-
-  const persistCrisisWarning = useCallback(async (w: CrisisWarning) => {
-    try {
-      await saveCrisisWarning(w);
-    } catch (err) {
-      console.error("[DB] 保存危机预警失败:", err);
-      showToast("危机预警数据保存失败");
-    }
-  }, [showToast]);
-
-  const persistCrisisWarningDelete = useCallback(async (id: string) => {
-    try {
-      await dbDeleteCrisisWarning(id);
-    } catch (err) {
-      console.error("[DB] 删除危机预警失败:", err);
-      showToast("删除危机预警记录失败");
-    }
-  }, [showToast]);
-
   const handleResetToSampleData = useCallback(async () => {
     if (!checkPermWithAudit("system.reset", "system", "重置示例数据")) return;
     if (!confirm("确定要重置所有数据吗？此操作将清空所有修改并恢复为示例数据。")) {
@@ -5212,29 +5075,7 @@ function App() {
       message: "用户请求重置系统数据为示例数据",
     });
     try {
-      setIsLoading(true);
-      const data = await resetToSampleData(
-        initialTimelineData,
-        initialRiskAssessments,
-        initialGoals,
-        initialCaseRecords,
-        initialCrisisWarnings,
-        7,
-        4,
-        7,
-        4,
-        3
-      );
-      setTimeline(data.timeline);
-      setAssessments(data.riskAssessments);
-      setGoals(data.goals);
-      setCaseRecords(data.caseRecords);
-      setCrisisWarnings(data.crisisWarnings);
-      nextTimelineId = data.nextTimelineId;
-      nextRiskId = data.nextRiskId;
-      nextGoalId = data.nextGoalId;
-      nextCaseRecordId = data.nextCaseRecordId;
-      nextCrisisWarningId = data.nextCrisisWarningId;
+      await resetToSampleData();
       createAudit({
         action: "system_reset",
         targetType: "system",
@@ -5242,7 +5083,6 @@ function App() {
         status: "success",
         message: "系统数据已重置为示例数据",
       });
-      showToast("数据已重置为示例数据", "success");
     } catch (err) {
       console.error("[DB] 重置数据失败:", err);
       createAudit({
@@ -5252,11 +5092,8 @@ function App() {
         status: "failed",
         message: "系统数据重置失败",
       });
-      showToast("重置数据失败");
-    } finally {
-      setIsLoading(false);
     }
-  }, [assertPerm, createAudit, showToast]);
+  }, [checkPermWithAudit, createAudit, resetToSampleData]);
 
   const handleCaseFieldChange = useCallback((field: string, value: string) => {
     setCaseFormData(prev => ({ ...prev, [field]: value }));
@@ -5296,13 +5133,11 @@ function App() {
       return;
     }
     const now = new Date().toISOString();
-    const finalRecord: CaseRecord = {
-      ...editingCaseRecord,
-      updatedAt: now,
-    };
-    if (finalRecord.id) {
-      setCaseRecords(prev => prev.map(r => r.id === finalRecord.id ? finalRecord : r));
-      persistCaseRecord(finalRecord);
+    let savedRecord: CaseRecord;
+    if (editingCaseRecord.id) {
+      const finalRecord: CaseRecord = { ...editingCaseRecord, updatedAt: now };
+      updateCaseRecord(finalRecord);
+      savedRecord = finalRecord;
       createAudit({
         action: "update",
         targetType: "case_record",
@@ -5313,10 +5148,8 @@ function App() {
         message: "个案记录已更新",
       });
     } else {
-      const newRecord = { ...finalRecord, id: "cr" + nextCaseRecordId++, createdAt: now };
-      setCaseRecords(prev => [...prev, newRecord]);
-      persistCaseRecord(newRecord);
-      persistCounters();
+      const newRecord = addCaseRecord({ ...editingCaseRecord, createdAt: now, updatedAt: now });
+      savedRecord = newRecord;
       createAudit({
         action: "create",
         targetType: "case_record",
@@ -5327,7 +5160,6 @@ function App() {
         message: "个案记录已创建",
       });
     }
-    const savedRecord = finalRecord.id ? finalRecord : { ...finalRecord, id: "cr" + (nextCaseRecordId - 1), createdAt: now };
     const latestRisk = assessments
       .filter(a => a.clientCode === savedRecord.clientCode)
       .sort(compareRiskTime)[0];
@@ -5340,8 +5172,7 @@ function App() {
     );
     if (trigger && !isDuplicateWarning(crisisWarnings, savedRecord.clientCode, Date.now(), crisisStrategy.suppressionWindowMinutes)) {
       const warningNow = new Date().toISOString();
-      const warning: CrisisWarning = {
-        id: "cw" + nextCrisisWarningId++,
+      addCrisisWarning({
         clientCode: savedRecord.clientCode,
         triggerType: "case_record",
         triggerId: savedRecord.id,
@@ -5350,22 +5181,18 @@ function App() {
         createdAt: warningNow,
         updatedAt: warningNow,
         actions: [],
-      };
-      setCrisisWarnings(prev => [...prev, warning]);
-      persistCrisisWarning(warning);
-      persistCounters();
+      });
       showToast(`已自动创建危机预警：${savedRecord.clientCode}`, "info");
     }
     setIsCaseFormOpen(false);
     setEditingCaseRecord(null);
     showToast("个案记录已保存", "success");
-  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit, persistCrisisWarning, assessments, crisisWarnings, crisisStrategy]);
+  }, [editingCaseRecord, addCaseRecord, updateCaseRecord, addCrisisWarning, showToast, checkPermWithAudit, createAudit, assessments, crisisWarnings, crisisStrategy]);
 
   const handleDeleteCaseRecord = useCallback((id: string) => {
     const record = caseRecords.find(r => r.id === id);
     if (!checkPermWithAudit("case.delete", "case_record", "删除个案记录", id, record?.clientCode)) return;
-    setCaseRecords(prev => prev.filter(r => r.id !== id));
-    persistCaseRecordDelete(id);
+    deleteCaseRecord(id);
     createAudit({
       action: "delete",
       targetType: "case_record",
@@ -5376,7 +5203,7 @@ function App() {
       message: "个案记录已删除",
     });
     showToast("个案记录已删除", "info");
-  }, [persistCaseRecordDelete, showToast, assertPerm, createAudit, caseRecords]);
+  }, [deleteCaseRecord, caseRecords, checkPermWithAudit, createAudit, showToast]);
 
   const handleCancelCaseForm = useCallback(() => {
     setIsCaseFormOpen(false);
@@ -5385,12 +5212,7 @@ function App() {
 
   const handleAddTimeline = useCallback((record: TimelineRecord) => {
     if (!checkPermWithAudit("timeline.create", "timeline_record", "新增时间线记录", record.id, record.clientCode)) return;
-    setTimeline(prev => {
-      const next = [...prev, record];
-      persistTimeline(next);
-      persistCounters();
-      return next;
-    });
+    addTimeline(record);
     createAudit({
       action: "create",
       targetType: "timeline_record",
@@ -5401,15 +5223,11 @@ function App() {
       details: { eventType: record.eventType },
       message: "时间线记录已创建",
     });
-  }, [persistTimeline, persistCounters, assertPerm, showToast, createAudit]);
+  }, [addTimeline, checkPermWithAudit, createAudit]);
 
   const handleUpdateTimeline = useCallback((record: TimelineRecord) => {
     if (!checkPermWithAudit("timeline.edit", "timeline_record", "编辑时间线记录", record.id, record.clientCode)) return;
-    setTimeline(prev => {
-      const next = prev.map(r => r.id === record.id ? record : r);
-      persistTimeline(next);
-      return next;
-    });
+    updateTimeline(record);
     createAudit({
       action: "update",
       targetType: "timeline_record",
@@ -5419,13 +5237,12 @@ function App() {
       status: "success",
       message: "时间线记录已更新",
     });
-  }, [persistTimeline, assertPerm, showToast, createAudit]);
+  }, [updateTimeline, checkPermWithAudit, createAudit]);
 
   const handleDeleteTimeline = useCallback((id: string) => {
     const record = timeline.find(r => r.id === id);
     if (!checkPermWithAudit("timeline.delete", "timeline_record", "删除时间线记录", id, record?.clientCode)) return;
-    setTimeline(prev => prev.filter(r => r.id !== id));
-    persistTimelineDelete(id);
+    deleteTimeline(id);
     createAudit({
       action: "delete",
       targetType: "timeline_record",
@@ -5435,13 +5252,11 @@ function App() {
       status: "success",
       message: "时间线记录已删除",
     });
-  }, [persistTimelineDelete, assertPerm, showToast, createAudit, timeline]);
+  }, [deleteTimeline, timeline, checkPermWithAudit, createAudit]);
 
   const handleAddAssessment = useCallback((a: RiskAssessment) => {
     if (!checkPermWithAudit("risk.create", "risk_assessment", "新增风险评估", a.id, a.clientCode)) return;
-    setAssessments(prev => [...prev, a]);
-    persistAssessment(a);
-    persistCounters();
+    addAssessment(a);
     createAudit({
       action: "create",
       targetType: "risk_assessment",
@@ -5455,8 +5270,7 @@ function App() {
     const { trigger, reasons } = shouldTriggerCrisisWarning(a.level, a.dimensions, [a.summary], crisisStrategy);
     if (trigger && !isDuplicateWarning(crisisWarnings, a.clientCode, Date.now(), crisisStrategy.suppressionWindowMinutes)) {
       const now = new Date().toISOString();
-      const warning: CrisisWarning = {
-        id: "cw" + nextCrisisWarningId++,
+      addCrisisWarning({
         clientCode: a.clientCode,
         triggerType: "risk_assessment",
         triggerId: a.id,
@@ -5465,19 +5279,15 @@ function App() {
         createdAt: now,
         updatedAt: now,
         actions: [],
-      };
-      setCrisisWarnings(prev => [...prev, warning]);
-      persistCrisisWarning(warning);
-      persistCounters();
+      });
       showToast(`已自动创建危机预警：${a.clientCode}`, "info");
     }
-  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit, persistCrisisWarning, crisisWarnings, crisisStrategy]);
+  }, [addAssessment, addCrisisWarning, checkPermWithAudit, showToast, createAudit, crisisWarnings, crisisStrategy]);
 
   const handleDeleteAssessment = useCallback((id: string) => {
     const a = assessments.find(x => x.id === id);
     if (!checkPermWithAudit("risk.delete", "risk_assessment", "删除风险评估", id, a?.clientCode)) return;
-    setAssessments(prev => prev.filter(a => a.id !== id));
-    persistAssessmentDelete(id);
+    deleteAssessment(id);
     createAudit({
       action: "delete",
       targetType: "risk_assessment",
@@ -5487,13 +5297,11 @@ function App() {
       status: "success",
       message: "风险评估已删除",
     });
-  }, [persistAssessmentDelete, assessments, assertPerm, showToast, createAudit]);
+  }, [deleteAssessment, assessments, checkPermWithAudit, createAudit]);
 
   const handleAddGoal = useCallback((g: InterventionGoal) => {
     if (!checkPermWithAudit("goal.create", "intervention_goal", "新增目标追踪", g.id, g.clientCode)) return;
-    setGoals(prev => [...prev, g]);
-    persistGoal(g);
-    persistCounters();
+    addGoal(g);
     createAudit({
       action: "create",
       targetType: "intervention_goal",
@@ -5503,12 +5311,11 @@ function App() {
       status: "success",
       message: "目标追踪已创建",
     });
-  }, [persistGoal, persistCounters, assertPerm, showToast, createAudit]);
+  }, [addGoal, checkPermWithAudit, createAudit]);
 
   const handleUpdateGoal = useCallback((g: InterventionGoal) => {
     if (!checkPermWithAudit("goal.edit", "intervention_goal", "编辑目标追踪", g.id, g.clientCode)) return;
-    setGoals(prev => prev.map(item => item.id === g.id ? g : item));
-    persistGoal(g);
+    updateGoal(g);
     createAudit({
       action: "update",
       targetType: "intervention_goal",
@@ -5518,13 +5325,12 @@ function App() {
       status: "success",
       message: "目标追踪已更新",
     });
-  }, [persistGoal, assertPerm, showToast, createAudit]);
+  }, [updateGoal, checkPermWithAudit, createAudit]);
 
   const handleDeleteGoal = useCallback((id: string) => {
     const g = goals.find(x => x.id === id);
     if (!checkPermWithAudit("goal.delete", "intervention_goal", "删除目标追踪", id, g?.clientCode)) return;
-    setGoals(prev => prev.filter(g => g.id !== id));
-    persistGoalDelete(id);
+    deleteGoal(id);
     createAudit({
       action: "delete",
       targetType: "intervention_goal",
@@ -5534,11 +5340,11 @@ function App() {
       status: "success",
       message: "目标追踪已删除",
     });
-  }, [persistGoalDelete, goals, assertPerm, showToast, createAudit]);
+  }, [deleteGoal, goals, checkPermWithAudit, createAudit]);
 
   const handleAddSupervisionRecord = useCallback((record: SupervisionRecord) => {
     if (!checkPermWithAudit("supervision.create", "supervision_record", "新增督导申请", record.id, record.clientCode)) return;
-    setSupervisionRecords(prev => [...prev, record]);
+    appDataAddSupervisionRecord(record);
     createAudit({
       action: "create",
       targetType: "supervision_record",
@@ -5549,11 +5355,11 @@ function App() {
       message: "督导申请已创建",
     });
     showToast("督导申请已保存", "success");
-  }, [showToast, assertPerm, createAudit]);
+  }, [appDataAddSupervisionRecord, showToast, checkPermWithAudit, createAudit]);
 
   const handleUpdateSupervisionRecord = useCallback((record: SupervisionRecord) => {
     if (!checkPermWithAudit("supervision.create", "supervision_record", "编辑督导申请", record.id, record.clientCode)) return;
-    setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    appDataUpdateSupervisionRecord(record);
     createAudit({
       action: "update",
       targetType: "supervision_record",
@@ -5564,11 +5370,11 @@ function App() {
       message: "督导申请已更新",
     });
     showToast("督导申请已更新", "success");
-  }, [showToast, assertPerm, createAudit]);
+  }, [appDataUpdateSupervisionRecord, showToast, checkPermWithAudit, createAudit]);
 
   const handleSubmitForSupervision = useCallback((record: SupervisionRecord) => {
     if (!checkPermWithAudit("supervision.submit", "supervision_record", "提交督导评审", record.id, record.clientCode)) return;
-    setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    appDataSubmitForSupervision(record);
     createAudit({
       action: "submit",
       targetType: "supervision_record",
@@ -5579,11 +5385,11 @@ function App() {
       message: "督导申请已提交评审",
     });
     showToast("已提交督导评审", "success");
-  }, [showToast, assertPerm, createAudit]);
+  }, [appDataSubmitForSupervision, showToast, checkPermWithAudit, createAudit]);
 
   const handleSaveDraft = useCallback((record: SupervisionRecord) => {
     if (!checkPermWithAudit("supervision.create", "supervision_record", "保存督导草稿", record.id, record.clientCode)) return;
-    setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
+    appDataUpdateSupervisionRecord(record);
     createAudit({
       action: "update",
       targetType: "supervision_record",
@@ -5595,21 +5401,12 @@ function App() {
       message: "督导草稿已保存",
     });
     showToast("草稿已保存", "success");
-  }, [showToast, assertPerm, createAudit]);
+  }, [appDataUpdateSupervisionRecord, showToast, checkPermWithAudit, createAudit]);
 
   const handleAddFeedback = useCallback((recordId: string, feedback: SupervisionFeedback) => {
     const record = supervisionRecords.find(r => r.id === recordId);
     if (!checkPermWithAudit("supervision.feedback", "supervision_feedback", "提交督导反馈", recordId, record?.clientCode)) return;
-    setSupervisionRecords(prev => prev.map(r => {
-      if (r.id !== recordId) return r;
-      return {
-        ...r,
-        status: "feedback",
-        feedbackHistory: [...r.feedbackHistory, feedback],
-        lastFeedbackAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-    }));
+    appDataAddFeedback(recordId, feedback);
     createAudit({
       action: "feedback",
       targetType: "supervision_feedback",
@@ -5621,12 +5418,10 @@ function App() {
       message: "督导意见已提交",
     });
     showToast("督导意见已提交", "success");
-  }, [showToast, supervisionRecords, assertPerm, createAudit]);
+  }, [appDataAddFeedback, showToast, supervisionRecords, checkPermWithAudit, createAudit]);
 
   const handleAddCrisisWarning = useCallback((w: CrisisWarning) => {
-    setCrisisWarnings(prev => [...prev, w]);
-    persistCrisisWarning(w);
-    persistCounters();
+    addCrisisWarning(w);
     createAudit({
       action: "create",
       targetType: "crisis_warning",
@@ -5635,12 +5430,11 @@ function App() {
       status: "success",
       message: "危机预警已自动创建",
     });
-  }, [persistCrisisWarning, persistCounters, createAudit]);
+  }, [addCrisisWarning, createAudit]);
 
   const handleUpdateCrisisWarning = useCallback((w: CrisisWarning, action: CrisisWarningAction, permission: PermissionAction) => {
     if (!checkPermWithAudit(permission, "crisis_warning", `危机预警${crisisWarningStatusLabels[action.toStatus]}`, w.id, w.clientCode)) return;
-    setCrisisWarnings(prev => prev.map(item => item.id === w.id ? w : item));
-    persistCrisisWarning(w);
+    updateCrisisWarning(w);
     createAudit({
       action: "update",
       targetType: "crisis_warning",
@@ -5657,13 +5451,12 @@ function App() {
       message: `危机预警状态：${crisisWarningStatusLabels[action.fromStatus]} → ${crisisWarningStatusLabels[action.toStatus]}，处理人：${action.handler}`,
     });
     showToast(`预警状态已更新为${crisisWarningStatusLabels[w.status]}`, "success");
-  }, [persistCrisisWarning, createAudit, showToast, assertPerm]);
+  }, [updateCrisisWarning, checkPermWithAudit, createAudit, showToast]);
 
   const handleDeleteCrisisWarning = useCallback((id: string) => {
     const w = crisisWarnings.find(x => x.id === id);
     if (!checkPermWithAudit("crisis.delete", "crisis_warning", "删除危机预警", id, w?.clientCode)) return;
-    setCrisisWarnings(prev => prev.filter(x => x.id !== id));
-    persistCrisisWarningDelete(id);
+    deleteCrisisWarning(id);
     createAudit({
       action: "delete",
       targetType: "crisis_warning",
@@ -5678,7 +5471,7 @@ function App() {
       message: `危机预警已删除（来访者：${w?.clientCode}，最终状态：${w?.status ? crisisWarningStatusLabels[w.status] : '未知'}）`,
     });
     showToast("危机预警已删除", "info");
-  }, [persistCrisisWarningDelete, crisisWarnings, createAudit, showToast, assertPerm]);
+  }, [deleteCrisisWarning, crisisWarnings, checkPermWithAudit, createAudit, showToast]);
 
   const handleSaveCrisisStrategy = useCallback((strategy: CrisisStrategy) => {
     if (!checkPermWithAudit("crisis.strategy", "crisis_strategy", "保存预警策略")) return;
@@ -5687,11 +5480,7 @@ function App() {
       updatedAt: new Date().toISOString(),
       updatedBy: session?.userName || "机构管理员",
     };
-    setCrisisStrategy(updated);
-    saveCrisisStrategy(updated).catch(err => {
-      console.error("[DB] 保存预警策略失败:", err);
-      showToast("预警策略保存失败");
-    });
+    saveCrisisStrategy(updated);
     createAudit({
       action: "update",
       targetType: "crisis_strategy",
@@ -5709,7 +5498,7 @@ function App() {
       message: `预警策略已更新：${updated.name}`,
     });
     showToast("预警策略已保存，仅影响后续触发判断", "success");
-  }, [assertPerm, showToast, createAudit, session?.userName]);
+  }, [saveCrisisStrategy, checkPermWithAudit, showToast, createAudit, session?.userName]);
 
   const handleRoleChange = useCallback((role: UserRole) => {
     switchRole(role);
