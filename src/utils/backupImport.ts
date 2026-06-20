@@ -576,6 +576,21 @@ function validateStats(
   }
 }
 
+function hasRequiredBackupDataShape(data: unknown): data is BackupData {
+  if (typeof data !== "object" || data === null) return false;
+  const record = data as Record<string, unknown>;
+  return (
+    Array.isArray(record.caseRecords) &&
+    Array.isArray(record.timeline) &&
+    Array.isArray(record.riskAssessments) &&
+    Array.isArray(record.goals) &&
+    Array.isArray(record.crisisWarnings) &&
+    typeof record.meta === "object" &&
+    record.meta !== null &&
+    Array.isArray(record.auditLogs)
+  );
+}
+
 export function validateBackupFile(raw: unknown): ValidationResult {
   const issues: ValidationIssue[] = [];
   let structureValid = true;
@@ -655,11 +670,12 @@ export function validateBackupFile(raw: unknown): ValidationResult {
   for (const store of requiredStores) {
     if (!(store in data)) {
       issues.push({
-        severity: "warning",
+        severity: "error",
         code: `MISSING_${store.toUpperCase()}`,
-        message: `备份文件中缺少 ${STORE_LABELS[store] || store} 数据，导入时该部分将保持不变`,
+        message: `备份文件中缺少 ${STORE_LABELS[store] || store} 数据，无法导入`,
         affectedStore: store,
       });
+      structureValid = false;
     }
   }
 
@@ -673,10 +689,14 @@ export function validateBackupFile(raw: unknown): ValidationResult {
     }
   }
 
+  if (!hasRequiredBackupDataShape(data)) {
+    return { valid: false, issues, structureValid: false, versionCompatible, sensitiveFields };
+  }
+
   const backup = obj as BackupFile;
   if (backup.data && typeof backup.data === "object") {
-    validateChecksums(backup.data as BackupData, backup.checksums, issues);
-    validateStats(backup.data as BackupData, backup.stats, issues);
+    validateChecksums(data, backup.checksums, issues);
+    validateStats(data, backup.stats, issues);
   }
 
   if (Array.isArray(data.caseRecords)) {

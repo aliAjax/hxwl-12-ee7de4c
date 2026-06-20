@@ -74,12 +74,14 @@ function getStorage(): AuditLogEntry[] {
   }
 }
 
-function setStorage(logs: AuditLogEntry[]): void {
+function setStorage(logs: AuditLogEntry[]): boolean {
   try {
     const trimmed = logs.slice(0, MAX_LOG_ENTRIES);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    return true;
   } catch (e) {
     console.error("[审计日志] 存储失败:", e);
+    return false;
   }
 }
 
@@ -350,7 +352,9 @@ export const AUDIT_STATUS_LABELS: Record<AuditLogEntry["status"], { label: strin
 };
 
 export function replaceAllAuditLogs(logs: AuditLogEntry[]): void {
-  setStorage(logs);
+  if (!setStorage(logs)) {
+    throw new Error("审计日志写入失败");
+  }
   emitChange();
 }
 
@@ -368,7 +372,9 @@ export function mergeAuditLogs(newLogs: AuditLogEntry[]): { added: number; total
   }
 
   merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  setStorage(merged);
+  if (!setStorage(merged)) {
+    throw new Error("审计日志写入失败");
+  }
   emitChange();
 
   return { added, total: merged.length };
@@ -397,7 +403,9 @@ export function restoreAuditLogsFromSnapshot(snapshot: AuditLogSnapshot): boolea
       console.error("[审计日志] 快照数据无效，不是数组");
       return false;
     }
-    setStorage(snapshot.logs);
+    if (!setStorage(snapshot.logs)) {
+      return false;
+    }
     emitChange();
     return true;
   } catch (e) {
