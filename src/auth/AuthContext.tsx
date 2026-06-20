@@ -39,6 +39,7 @@ export interface AuthContextValue {
   session: UserSession | null;
   currentRole: UserRole;
   isAuthenticated: boolean;
+  isRoleTransitioning: boolean;
   login: (role: UserRole, userName?: string) => void;
   logout: () => void;
   switchRole: (role: UserRole, userName?: string) => void;
@@ -128,6 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const [initialized, setInitialized] = useState(false);
+  const [isRoleTransitioning, setIsRoleTransitioning] = useState(false);
+  const [transitionKey, setTransitionKey] = useState(0);
 
   const currentRole = useMemo<UserRole>(() => {
     return session?.role ?? loadStoredRole() ?? DEFAULT_ROLE;
@@ -216,6 +219,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session]);
 
   const switchRole = useCallback((role: UserRole, userName?: string) => {
+    if (role === currentRole) return;
+
+    setIsRoleTransitioning(true);
+    setTransitionKey(prev => prev + 1);
+
     const oldRole = session?.role;
     const oldUserName = session?.userName;
     const newSession: UserSession = {
@@ -224,24 +232,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       loginAt: session?.loginAt || new Date().toISOString(),
       sessionId: session?.sessionId || generateSessionId(),
     };
-    setSession(newSession);
 
-    createAuditLog({
-      actorRole: role,
-      actorName: newSession.userName,
-      action: "role_change",
-      targetType: "user_session",
-      targetId: newSession.sessionId,
-      status: "success",
-      details: {
-        fromRole: oldRole,
-        toRole: role,
-        fromUserName: oldUserName,
-        toUserName: newSession.userName,
-      },
-      message: `切换角色：${oldRole ? ROLE_LABELS[oldRole] : '未登录'} → ${ROLE_LABELS[role]}`,
-    });
-  }, [session]);
+    setTimeout(() => {
+      setSession(newSession);
+      createAuditLog({
+        actorRole: role,
+        actorName: newSession.userName,
+        action: "role_change",
+        targetType: "user_session",
+        targetId: newSession.sessionId,
+        status: "success",
+        details: {
+          fromRole: oldRole,
+          toRole: role,
+          fromUserName: oldUserName,
+          toUserName: newSession.userName,
+        },
+        message: `切换角色：${oldRole ? ROLE_LABELS[oldRole] : '未登录'} → ${ROLE_LABELS[role]}`,
+      });
+
+      setTimeout(() => {
+        setIsRoleTransitioning(false);
+      }, 100);
+    }, 50);
+  }, [session, currentRole]);
 
   const checkPermissionFn = useCallback((action: PermissionAction): PermissionCheckResult => {
     return hasPermission(currentRole, action);
@@ -277,6 +291,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     currentRole,
     isAuthenticated: !!session,
+    isRoleTransitioning,
     login,
     logout,
     switchRole,
@@ -290,6 +305,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }), [
     session,
     currentRole,
+    isRoleTransitioning,
     login,
     logout,
     switchRole,
@@ -308,7 +324,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {children}
+      {isRoleTransitioning ? (
+        <div className="role-transition-overlay" key={`transition-${transitionKey}`}>
+          <div className="role-transition-spinner" />
+          <p className="role-transition-text">正在切换角色权限…</p>
+        </div>
+      ) : (
+        <div key={`content-${transitionKey}-${currentRole}`}>
+          {children}
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }

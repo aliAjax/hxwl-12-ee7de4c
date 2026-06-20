@@ -12,6 +12,9 @@ import {
   ProtectedField,
   createAuditLog,
   assertPermission,
+  filterDataByRole,
+  getActiveClientCodes,
+  createPermissionDeniedHandler,
   type PermissionAction,
 } from "./auth";
 import {
@@ -4314,6 +4317,35 @@ function App() {
     });
   }, [currentRole, session?.userName]);
 
+  const handlePermissionDenied = useMemo(
+    () => createPermissionDeniedHandler(currentRole, showToast, createAudit),
+    [currentRole, showToast, createAudit]
+  );
+
+  const filteredData = useMemo(() => {
+    return filterDataByRole(
+      {
+        caseRecords,
+        timeline,
+        assessments,
+        goals,
+        supervisionRecords,
+        crisisWarnings,
+      },
+      currentRole
+    );
+  }, [caseRecords, timeline, assessments, goals, supervisionRecords, crisisWarnings, currentRole]);
+
+  const displayClientCodes = useMemo(() => {
+    return getActiveClientCodes(
+      filteredData,
+      caseRecords,
+      timeline,
+      assessments,
+      goals
+    );
+  }, [filteredData, caseRecords, timeline, assessments, goals]);
+
   const handleDBEvent = useCallback((event: DBEventType, data?: unknown) => {
     if (event === "upgrade") {
       const upgradeData = data as { from?: number; to?: number; reason?: string };
@@ -5206,11 +5238,11 @@ function App() {
   }, [assessments]);
 
   const caseSearchOptions = useMemo(() => {
-    const topics = Array.from(new Set(caseRecords.map(r => r.consultationTopic).filter(Boolean))).sort();
-    const emotionalStates = Array.from(new Set(caseRecords.map(r => r.emotionalState).filter(Boolean))).sort();
-    const interventions = Array.from(new Set(caseRecords.map(r => r.intervention).filter(Boolean))).sort();
+    const topics = Array.from(new Set(filteredData.caseRecords.map(r => r.consultationTopic).filter(Boolean))).sort();
+    const emotionalStates = Array.from(new Set(filteredData.caseRecords.map(r => r.emotionalState).filter(Boolean))).sort();
+    const interventions = Array.from(new Set(filteredData.caseRecords.map(r => r.intervention).filter(Boolean))).sort();
     return { topics, emotionalStates, interventions };
-  }, [caseRecords]);
+  }, [filteredData.caseRecords]);
 
   const hasCaseSearchFilters = caseSearchFilters.clientCode || caseSearchFilters.consultationTopic
     || caseSearchFilters.riskLevel || caseSearchFilters.crisisWarningStatus
@@ -5218,8 +5250,8 @@ function App() {
     || caseSearchFilters.nextGoal || caseSearchFilters.keyword;
 
   const filteredCaseRecords = useMemo(() => {
-    if (!hasCaseSearchFilters) return caseRecords;
-    return caseRecords.filter(record => {
+    if (!hasCaseSearchFilters) return filteredData.caseRecords;
+    return filteredData.caseRecords.filter(record => {
       if (caseSearchFilters.clientCode) {
         if (!record.clientCode.toLowerCase().includes(caseSearchFilters.clientCode.toLowerCase())) return false;
       }
@@ -5231,7 +5263,7 @@ function App() {
         if (!latestRisk || latestRisk.level !== caseSearchFilters.riskLevel) return false;
       }
       if (caseSearchFilters.crisisWarningStatus) {
-        const hasMatchingWarning = crisisWarnings.some(w =>
+        const hasMatchingWarning = filteredData.crisisWarnings.some(w =>
           w.clientCode === record.clientCode && w.status === caseSearchFilters.crisisWarningStatus
         );
         if (!hasMatchingWarning) return false;
@@ -5257,7 +5289,7 @@ function App() {
       }
       return true;
     });
-  }, [caseRecords, caseSearchFilters, hasCaseSearchFilters, latestRiskByClient, crisisWarningStats, crisisWarnings]);
+  }, [filteredData.caseRecords, filteredData.crisisWarnings, caseSearchFilters, hasCaseSearchFilters, latestRiskByClient, crisisWarningStats]);
 
   const resetCaseSearchFilters = useCallback(() => {
     setCaseSearchFilters({
@@ -5626,8 +5658,8 @@ function App() {
                     <h2>近期记录</h2>
                     <p className="section-subtitle">
                       {hasCaseSearchFilters
-                        ? `筛选结果 ${filteredCaseRecords.length} / ${caseRecords.length} 条记录`
-                        : `共 ${caseRecords.length} 条记录，数据已自动保存到本地浏览器`}
+                        ? `筛选结果 ${filteredCaseRecords.length} / ${filteredData.caseRecords.length} 条记录`
+                        : `共 ${filteredData.caseRecords.length} 条记录，数据已自动保存到本地浏览器`}
                     </p>
                   </div>
                 </div>
@@ -5637,8 +5669,8 @@ function App() {
                   onFiltersChange={setCaseSearchFilters}
                   onReset={resetCaseSearchFilters}
                   resultCount={filteredCaseRecords.length}
-                  totalCount={caseRecords.length}
-                  allClientCodes={activeClientCodes}
+                  totalCount={filteredData.caseRecords.length}
+                  allClientCodes={displayClientCodes}
                   allTopics={caseSearchOptions.topics}
                   allEmotionalStates={caseSearchOptions.emotionalStates}
                   allInterventions={caseSearchOptions.interventions}
@@ -5646,10 +5678,10 @@ function App() {
                 />
 
                 <div className="record-list">
-                  {caseRecords.length === 0 && (
+                  {filteredData.caseRecords.length === 0 && (
                     <p className="tl-empty">暂无个案记录，点击「新增个案记录」开始录入</p>
                   )}
-                  {caseRecords.length > 0 && filteredCaseRecords.length === 0 && (
+                  {filteredData.caseRecords.length > 0 && filteredCaseRecords.length === 0 && (
                     <div className="case-search-empty">
                       <p className="case-search-empty-icon">🔍</p>
                       <p className="case-search-empty-text">没有找到匹配的个案记录</p>
@@ -5724,10 +5756,10 @@ function App() {
               {activeTab === "risk" && (
                 <ProtectedMenu menu="menu.riskAssessment">
                   <RiskAssessmentSection
-                    assessments={assessments}
+                    assessments={filteredData.assessments}
                     onAddAssessment={handleAddAssessment}
                     onDeleteAssessment={handleDeleteAssessment}
-                    allClientCodes={activeClientCodes}
+                    allClientCodes={displayClientCodes}
                   />
                 </ProtectedMenu>
               )}
@@ -5735,11 +5767,11 @@ function App() {
               {activeTab === "goals" && (
                 <ProtectedMenu menu="menu.goalTracking">
                   <GoalTrackingSection
-                    goals={goals}
+                    goals={filteredData.goals}
                     onAddGoal={handleAddGoal}
                     onUpdateGoal={handleUpdateGoal}
                     onDeleteGoal={handleDeleteGoal}
-                    allClientCodes={activeClientCodes}
+                    allClientCodes={displayClientCodes}
                   />
                 </ProtectedMenu>
               )}
@@ -5747,8 +5779,8 @@ function App() {
               {activeTab === "timeline" && (
                 <ProtectedMenu menu="menu.timeline">
                   <TimelineSection
-                    clientCodes={activeClientCodes}
-                    records={timeline}
+                    clientCodes={displayClientCodes}
+                    records={filteredData.timeline}
                     onAddRecord={handleAddTimeline}
                     onUpdateRecord={handleUpdateTimeline}
                     onDeleteRecord={handleDeleteTimeline}
@@ -5760,14 +5792,14 @@ function App() {
               {activeTab === "crisisWarning" && (
                 <ProtectedMenu menu="menu.crisisWarning">
                   <CrisisWarningSection
-                    warnings={crisisWarnings}
+                    warnings={filteredData.crisisWarnings}
                     onAddWarning={handleAddCrisisWarning}
                     onUpdateWarning={handleUpdateCrisisWarning}
                     onDeleteWarning={handleDeleteCrisisWarning}
-                    allClientCodes={activeClientCodes}
+                    allClientCodes={displayClientCodes}
                     role={currentRole}
-                    assessments={assessments}
-                    caseRecords={caseRecords}
+                    assessments={filteredData.assessments}
+                    caseRecords={filteredData.caseRecords}
                   />
                 </ProtectedMenu>
               )}
@@ -5775,7 +5807,7 @@ function App() {
               {activeTab === "supervision" && (
                 <ProtectedMenu menu="menu.supervision">
                   <SupervisionWorkbench
-                    records={supervisionRecords}
+                    records={filteredData.supervisionRecords}
                     role={currentRole}
                     onRoleChange={handleRoleChange}
                     onAddRecord={handleAddSupervisionRecord}
@@ -5784,11 +5816,11 @@ function App() {
                     onSaveDraft={handleSaveDraft}
                     onAddFeedback={handleAddFeedback}
                     crisisWarningByClient={crisisWarningStats.byClient}
-                    timeline={timeline}
-                    assessments={assessments}
-                    goals={goals}
-                    caseRecords={caseRecords}
-                    allClientCodes={activeClientCodes}
+                    timeline={filteredData.timeline}
+                    assessments={filteredData.assessments}
+                    goals={filteredData.goals}
+                    caseRecords={filteredData.caseRecords}
+                    allClientCodes={displayClientCodes}
                   />
                 </ProtectedMenu>
               )}
@@ -5796,11 +5828,11 @@ function App() {
               {activeTab === "export" && (
                 <ProtectedMenu menu="menu.export">
                   <SessionSummaryExport
-                    clientCodes={activeClientCodes}
-                    timeline={timeline}
-                    assessments={assessments}
-                    goals={goals}
-                    caseRecords={caseRecords}
+                    clientCodes={displayClientCodes}
+                    timeline={filteredData.timeline}
+                    assessments={filteredData.assessments}
+                    goals={filteredData.goals}
+                    caseRecords={filteredData.caseRecords}
                     onToast={showToast}
                   />
                 </ProtectedMenu>
@@ -5808,10 +5840,10 @@ function App() {
 
               <PermissionGate action="data.overview">
                 <DataOverviewSection
-                  timeline={timeline}
-                  assessments={assessments}
-                  goals={goals}
-                  caseRecords={caseRecords}
+                  timeline={filteredData.timeline}
+                  assessments={filteredData.assessments}
+                  goals={filteredData.goals}
+                  caseRecords={filteredData.caseRecords}
                 />
               </PermissionGate>
             </>

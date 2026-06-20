@@ -1,6 +1,7 @@
 export * from "./roleConfig";
 export * from "./permissions";
 export * from "./auditLog";
+export * from "./dataFilter";
 export { AuthProvider, useAuth, useCurrentRole, usePermission, useRoleConfig } from "./AuthContext";
 export {
   PermissionGate,
