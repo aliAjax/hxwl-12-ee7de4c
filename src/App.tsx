@@ -3,6 +3,7 @@ import "./styles.css";
 import SessionSummaryExport from "./components/SessionSummaryExport";
 import ExportHistoryCenter from "./components/ExportHistoryCenter";
 import AdminDashboard from "./components/AdminDashboard";
+import BackupImportPanel from "./components/BackupImportPanel";
 import {
   useAuth,
   ProtectedButton,
@@ -4888,7 +4889,7 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
   );
 }
 
-type AppTab = "caseRecords" | "timeline" | "risk" | "goals" | "crisisWarning" | "supervision" | "export" | "audit";
+type AppTab = "caseRecords" | "timeline" | "risk" | "goals" | "crisisWarning" | "supervision" | "export" | "audit" | "backup";
 type ExportSubTab = "generate" | "history";
 
 function App() {
@@ -5941,6 +5942,15 @@ function App() {
             >
               📋 审计日志
             </button>
+            <PermissionGate action="backup.export">
+              <button
+                className={`role-chip ${activeTab === "backup" ? "active" : ""}`}
+                style={{ marginTop: 8 }}
+                onClick={() => setActiveTab("backup")}
+              >
+                💾 备份与恢复
+              </button>
+            </PermissionGate>
           </ProtectedMenu>
           <ProtectedMenu menu="menu.dataOverview">
             <>
@@ -6045,6 +6055,17 @@ function App() {
         <div className="panel" style={{ flex: 1 }}>
           {activeTab === "audit" ? (
             <AuditLogViewer />
+          ) : activeTab === "backup" ? (
+            <BackupImportPanel
+              caseRecords={caseRecords}
+              timeline={timeline}
+              riskAssessments={assessments}
+              goals={goals}
+              crisisWarnings={crisisWarnings}
+              onImportComplete={() => {
+                window.location.reload();
+              }}
+            />
           ) : (
             <>
               <div style={{

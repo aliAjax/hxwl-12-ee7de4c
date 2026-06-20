@@ -33,7 +33,9 @@ export type PermissionAction =
   | "crisis.refer"
   | "crisis.close"
   | "crisis.delete"
-  | "crisis.strategy";
+  | "crisis.strategy"
+  | "backup.export"
+  | "backup.import";
 
 export type FieldKey =
   | "case.clientCode"
@@ -228,6 +230,8 @@ export const ROLE_CONFIG: Record<UserRole, RoleConfig> = {
       "crisis.close",
       "crisis.delete",
       "crisis.strategy",
+      "backup.export",
+      "backup.import",
     ],
     visibleFields: [],
     visibleMenus: [

@@ -26,7 +26,8 @@ export type AuditTargetType =
   | "system"
   | "audit_log"
   | "user_session"
-  | "dashboard_drilldown";
+  | "dashboard_drilldown"
+  | "data_backup";
 
 export interface AuditLogEntry {
   id: string;
@@ -55,7 +56,7 @@ export interface AuditLogFilters {
   keyword?: string;
 }
 
-const STORAGE_KEY = "hxwl12_audit_logs";
+export const STORAGE_KEY = "hxwl12_audit_logs";
 const MAX_LOG_ENTRIES = 5000;
 
 function generateId(): string {
@@ -339,6 +340,7 @@ export const AUDIT_TARGET_LABELS: Record<AuditTargetType, string> = {
   audit_log: "审计日志",
   user_session: "用户会话",
   dashboard_drilldown: "运营看板钻取",
+  data_backup: "数据备份",
 };
 
 export const AUDIT_STATUS_LABELS: Record<AuditLogEntry["status"], { label: string; color: string }> = {
@@ -346,3 +348,28 @@ export const AUDIT_STATUS_LABELS: Record<AuditLogEntry["status"], { label: strin
   denied: { label: "拒绝", color: "#ef4444" },
   failed: { label: "失败", color: "#f59e0b" },
 };
+
+export function replaceAllAuditLogs(logs: AuditLogEntry[]): void {
+  setStorage(logs);
+  emitChange();
+}
+
+export function mergeAuditLogs(newLogs: AuditLogEntry[]): { added: number; total: number } {
+  const existing = getStorage();
+  const existingIds = new Set(existing.map(l => l.id));
+  let added = 0;
+
+  const merged = [...existing];
+  for (const log of newLogs) {
+    if (!existingIds.has(log.id)) {
+      merged.push(log);
+      added++;
+    }
+  }
+
+  merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  setStorage(merged);
+  emitChange();
+
+  return { added, total: merged.length };
+}

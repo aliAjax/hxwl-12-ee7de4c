@@ -669,3 +669,202 @@ export async function saveCrisisStrategy(strategy: CrisisStrategy): Promise<void
     db.close();
   }
 }
+
+export interface ExportedBackupData {
+  caseRecords: CaseRecord[];
+  timeline: TimelineRecord[];
+  riskAssessments: RiskAssessment[];
+  goals: InterventionGoal[];
+  crisisWarnings: CrisisWarning[];
+  meta: {
+    nextTimelineId: number;
+    nextRiskId: number;
+    nextGoalId: number;
+    nextCaseRecordId: number;
+    nextCrisisWarningId: number;
+    seeded?: boolean;
+    seededAt?: string;
+    dbVersion: number;
+    [key: string]: unknown;
+  };
+}
+
+export async function exportAllDataForBackup(): Promise<ExportedBackupData> {
+  const db = await openDB();
+
+  try {
+    const [
+      caseRecords,
+      timeline,
+      riskAssessments,
+      goals,
+      crisisWarnings,
+      nextTimelineId,
+      nextRiskId,
+      nextGoalId,
+      nextCaseRecordId,
+      nextCrisisWarningId,
+      seeded,
+      seededAt,
+    ] = await Promise.all([
+      getAllFromStore<CaseRecord>(db, STORES.caseRecords),
+      getAllFromStore<TimelineRecord>(db, STORES.timeline),
+      getAllFromStore<RiskAssessment>(db, STORES.riskAssessments),
+      getAllFromStore<InterventionGoal>(db, STORES.goals),
+      getAllFromStore<CrisisWarning>(db, STORES.crisisWarnings),
+      getMeta<number>(db, "nextTimelineId"),
+      getMeta<number>(db, "nextRiskId"),
+      getMeta<number>(db, "nextGoalId"),
+      getMeta<number>(db, "nextCaseRecordId"),
+      getMeta<number>(db, "nextCrisisWarningId"),
+      getMeta<boolean>(db, "seeded"),
+      getMeta<string>(db, "seededAt"),
+    ]);
+
+    return {
+      caseRecords,
+      timeline,
+      riskAssessments,
+      goals,
+      crisisWarnings,
+      meta: {
+        nextTimelineId: nextTimelineId ?? 1,
+        nextRiskId: nextRiskId ?? 1,
+        nextGoalId: nextGoalId ?? 1,
+        nextCaseRecordId: nextCaseRecordId ?? 1,
+        nextCrisisWarningId: nextCrisisWarningId ?? 1,
+        seeded,
+        seededAt,
+        dbVersion: DB_VERSION,
+      },
+    };
+  } finally {
+    db.close();
+  }
+}
+
+export interface ImportResult {
+  success: boolean;
+  error?: string;
+  importedCounts: {
+    caseRecords: number;
+    timeline: number;
+    riskAssessments: number;
+    goals: number;
+    crisisWarnings: number;
+  };
+}
+
+export async function importBackupDataAtomically(
+  data: ExportedBackupData,
+  mode: "merge" | "overwrite" = "merge"
+): Promise<ImportResult> {
+  const db = await openDB();
+
+  try {
+    const tx = db.transaction(
+      [
+        STORES.caseRecords,
+        STORES.timeline,
+        STORES.riskAssessments,
+        STORES.goals,
+        STORES.crisisWarnings,
+        STORES.meta,
+      ],
+      "readwrite"
+    );
+
+    const caseStore = tx.objectStore(STORES.caseRecords);
+    const timelineStore = tx.objectStore(STORES.timeline);
+    const riskStore = tx.objectStore(STORES.riskAssessments);
+    const goalStore = tx.objectStore(STORES.goals);
+    const cwStore = tx.objectStore(STORES.crisisWarnings);
+    const metaStore = tx.objectStore(STORES.meta);
+
+    let caseCount = 0;
+    let timelineCount = 0;
+    let riskCount = 0;
+    let goalCount = 0;
+    let cwCount = 0;
+
+    if (mode === "overwrite") {
+      caseStore.clear();
+      timelineStore.clear();
+      riskStore.clear();
+      goalStore.clear();
+      cwStore.clear();
+    }
+
+    data.caseRecords.forEach(r => {
+      caseStore.put(r);
+      caseCount++;
+    });
+
+    data.timeline.forEach(r => {
+      timelineStore.put(r);
+      timelineCount++;
+    });
+
+    data.riskAssessments.forEach(r => {
+      riskStore.put(r);
+      riskCount++;
+    });
+
+    data.goals.forEach(g => {
+      goalStore.put(g);
+      goalCount++;
+    });
+
+    data.crisisWarnings.forEach(w => {
+      cwStore.put(w);
+      cwCount++;
+    });
+
+    if (data.meta) {
+      const metaKeys = [
+        "nextTimelineId",
+        "nextRiskId",
+        "nextGoalId",
+        "nextCaseRecordId",
+        "nextCrisisWarningId",
+        "seeded",
+        "seededAt",
+        "dbVersion",
+      ];
+
+      for (const key of metaKeys) {
+        if (key in data.meta && data.meta[key] !== undefined) {
+          metaStore.put({ key, value: data.meta[key] });
+        }
+      }
+    }
+
+    await promisifyTransaction(tx);
+
+    return {
+      success: true,
+      importedCounts: {
+        caseRecords: caseCount,
+        timeline: timelineCount,
+        riskAssessments: riskCount,
+        goals: goalCount,
+        crisisWarnings: cwCount,
+      },
+    };
+  } catch (e) {
+    console.error("[DB] 数据导入失败，事务已回滚:", e);
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "未知错误",
+      importedCounts: {
+        caseRecords: 0,
+        timeline: 0,
+        riskAssessments: 0,
+        goals: 0,
+        crisisWarnings: 0,
+      },
+    };
+  } finally {
+    db.close();
+  }
+}
