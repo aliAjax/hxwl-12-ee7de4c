@@ -2427,6 +2427,8 @@ function CrisisWarningSection({
   role,
   assessments,
   caseRecords,
+  simulationAssessments,
+  simulationCaseRecords,
   crisisStrategy,
   onSaveCrisisStrategy,
 }: {
@@ -2438,6 +2440,8 @@ function CrisisWarningSection({
   role: UserRole;
   assessments: RiskAssessment[];
   caseRecords: CaseRecord[];
+  simulationAssessments?: RiskAssessment[];
+  simulationCaseRecords?: CaseRecord[];
   crisisStrategy: CrisisStrategy;
   onSaveCrisisStrategy: (strategy: CrisisStrategy) => void;
 }) {
@@ -2954,8 +2958,8 @@ function CrisisWarningSection({
         <CrisisStrategyPanel
           strategy={crisisStrategy}
           onSave={onSaveCrisisStrategy}
-          assessments={assessments}
-          caseRecords={caseRecords}
+          assessments={simulationAssessments ?? assessments}
+          caseRecords={simulationCaseRecords ?? caseRecords}
           warnings={warnings}
         />
       )}
@@ -6379,6 +6383,8 @@ function App() {
                     role={currentRole}
                     assessments={filteredData.assessments}
                     caseRecords={filteredData.caseRecords}
+                    simulationAssessments={hasPerm("crisis.strategy") ? assessments : filteredData.assessments}
+                    simulationCaseRecords={hasPerm("crisis.strategy") ? caseRecords : filteredData.caseRecords}
                     crisisStrategy={crisisStrategy}
                     onSaveCrisisStrategy={handleSaveCrisisStrategy}
                   />
