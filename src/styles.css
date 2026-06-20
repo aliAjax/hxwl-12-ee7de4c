@@ -5807,6 +5807,124 @@ button:disabled {
   line-height: 1.4;
 }
 
+.cs-sim-summary-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: white;
+  border-radius: 10px;
+  border: 1px solid #99f6e4;
+}
+
+.cs-sim-summary-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: 8px;
+}
+
+.cs-sim-summary-hit {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+}
+
+.cs-sim-summary-suppressed {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+}
+
+.cs-sim-summary-total {
+  background: #eff6ff;
+  border: 1px solid #93c5fd;
+}
+
+.cs-sim-summary-count {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.cs-sim-summary-hit .cs-sim-summary-count {
+  color: #15803d;
+}
+
+.cs-sim-summary-suppressed .cs-sim-summary-count {
+  color: #c2410c;
+}
+
+.cs-sim-summary-total .cs-sim-summary-count {
+  color: #1d4ed8;
+}
+
+.cs-sim-summary-label {
+  font-size: 12px;
+  color: #4b5563;
+  font-weight: 500;
+}
+
+.cs-sim-group {
+  margin-bottom: 16px;
+}
+
+.cs-sim-group-title {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+}
+
+.cs-sim-group-hit {
+  color: #15803d;
+  background: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.cs-sim-group-suppressed {
+  color: #c2410c;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
+}
+
+.cs-sim-item-hit {
+  border-left: 4px solid #22c55e;
+  background: linear-gradient(to right, #f0fdf4 0%, white 10%);
+  position: relative;
+}
+
+.cs-sim-item-suppressed {
+  border-left: 4px solid #f97316;
+  background: linear-gradient(to right, #fff7ed 0%, white 10%);
+  opacity: 0.85;
+}
+
+.cs-sim-tag {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 3px 10px;
+  background: #dcfce7;
+  color: #15803d;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid #86efac;
+}
+
+.cs-sim-suppress-reason {
+  margin: 8px 0 0 0;
+  padding: 6px 10px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #78350f;
+  line-height: 1.4;
+}
+
 .cs-empty-hint {
   margin: 0;
   padding: 12px;

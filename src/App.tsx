@@ -403,18 +403,52 @@ function isDuplicateWarning(
   });
 }
 
+export interface SimulationHit {
+  clientCode: string;
+  triggerType: "risk_assessment" | "case_record";
+  triggerId: string;
+  reasons: string[];
+  suppressed: boolean;
+  suppressReason?: string;
+  existingWarningId?: string;
+}
+
 function simulateCrisisStrategy(
   assessments: RiskAssessment[],
   caseRecords: CaseRecord[],
   existingWarnings: CrisisWarning[],
   strategy: CrisisStrategy
-): { clientCode: string; triggerType: "risk_assessment" | "case_record"; triggerId: string; reasons: string[] }[] {
-  const hits: { clientCode: string; triggerType: "risk_assessment" | "case_record"; triggerId: string; reasons: string[] }[] = [];
+): SimulationHit[] {
+  const hits: SimulationHit[] = [];
   const now = Date.now();
   for (const a of assessments) {
     const { trigger, reasons } = shouldTriggerCrisisWarning(a.level, a.dimensions, [a.summary], strategy);
-    if (trigger && !isDuplicateWarning(existingWarnings, a.clientCode, now, strategy.suppressionWindowMinutes)) {
-      hits.push({ clientCode: a.clientCode, triggerType: "risk_assessment", triggerId: a.id, reasons });
+    if (trigger) {
+      const duplicate = existingWarnings.find(w => {
+        if (w.clientCode !== a.clientCode) return false;
+        if (w.status === "closed") return false;
+        const created = new Date(w.createdAt).getTime();
+        return now - created < strategy.suppressionWindowMinutes * 60 * 1000;
+      });
+      if (duplicate) {
+        hits.push({
+          clientCode: a.clientCode,
+          triggerType: "risk_assessment",
+          triggerId: a.id,
+          reasons,
+          suppressed: true,
+          suppressReason: `同来访者已有未关闭预警（${duplicate.id.toUpperCase()}），${strategy.suppressionWindowMinutes}分钟抑制窗口内不重复创建`,
+          existingWarningId: duplicate.id,
+        });
+      } else {
+        hits.push({
+          clientCode: a.clientCode,
+          triggerType: "risk_assessment",
+          triggerId: a.id,
+          reasons,
+          suppressed: false,
+        });
+      }
     }
   }
   for (const cr of caseRecords) {
@@ -428,8 +462,32 @@ function simulateCrisisStrategy(
       [cr.mainConcern, cr.intervention, cr.nextGoal],
       strategy
     );
-    if (trigger && !isDuplicateWarning(existingWarnings, cr.clientCode, now, strategy.suppressionWindowMinutes)) {
-      hits.push({ clientCode: cr.clientCode, triggerType: "case_record", triggerId: cr.id, reasons });
+    if (trigger) {
+      const duplicate = existingWarnings.find(w => {
+        if (w.clientCode !== cr.clientCode) return false;
+        if (w.status === "closed") return false;
+        const created = new Date(w.createdAt).getTime();
+        return now - created < strategy.suppressionWindowMinutes * 60 * 1000;
+      });
+      if (duplicate) {
+        hits.push({
+          clientCode: cr.clientCode,
+          triggerType: "case_record",
+          triggerId: cr.id,
+          reasons,
+          suppressed: true,
+          suppressReason: `同来访者已有未关闭预警（${duplicate.id.toUpperCase()}），${strategy.suppressionWindowMinutes}分钟抑制窗口内不重复创建`,
+          existingWarningId: duplicate.id,
+        });
+      } else {
+        hits.push({
+          clientCode: cr.clientCode,
+          triggerType: "case_record",
+          triggerId: cr.id,
+          reasons,
+          suppressed: false,
+        });
+      }
     }
   }
   return hits;
@@ -2083,7 +2141,7 @@ function CrisisStrategyPanel({
   const [newKeyword, setNewKeyword] = useState("");
   const [newDimThreshold, setNewDimThreshold] = useState<keyof RiskDimensions>("selfHarm");
   const [newDimScore, setNewDimScore] = useState(3);
-  const [simulationResult, setSimulationResult] = useState<{ clientCode: string; triggerType: "risk_assessment" | "case_record"; triggerId: string; reasons: string[] }[] | null>(null);
+  const [simulationResult, setSimulationResult] = useState<SimulationHit[] | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
 
   useEffect(() => {
@@ -2282,25 +2340,77 @@ function CrisisStrategyPanel({
       {simulationResult !== null && (
         <div className="cs-simulation-result">
           <h4>🧪 模拟检查结果</h4>
-          <p className="cs-sim-summary">
-            当前策略会对现有数据命中 <strong>{simulationResult.length}</strong> 条记录
-          </p>
+          <div className="cs-sim-summary-row">
+            <div className="cs-sim-summary-item cs-sim-summary-hit">
+              <span className="cs-sim-summary-count">
+                {simulationResult.filter(h => !h.suppressed).length}
+              </span>
+              <span className="cs-sim-summary-label">实际会创建预警</span>
+            </div>
+            <div className="cs-sim-summary-item cs-sim-summary-suppressed">
+              <span className="cs-sim-summary-count">
+                {simulationResult.filter(h => h.suppressed).length}
+              </span>
+              <span className="cs-sim-summary-label">命中但被重复抑制</span>
+            </div>
+            <div className="cs-sim-summary-item cs-sim-summary-total">
+              <span className="cs-sim-summary-count">
+                {simulationResult.length}
+              </span>
+              <span className="cs-sim-summary-label">策略命中总数</span>
+            </div>
+          </div>
+
           {simulationResult.length === 0 ? (
             <p className="cs-empty-hint">当前策略不会对现有数据触发新的预警</p>
           ) : (
-            <div className="cs-sim-list">
-              {simulationResult.map((hit, idx) => (
-                <div key={idx} className="cs-sim-item">
-                  <div className="cs-sim-header">
-                    <span className="cs-sim-client">{hit.clientCode}</span>
-                    <span className="cs-sim-trigger">
-                      {hit.triggerType === "risk_assessment" ? "⚠️ 风险评估" : "📝 个案记录"}
-                    </span>
+            <>
+              {simulationResult.filter(h => !h.suppressed).length > 0 && (
+                <div className="cs-sim-group">
+                  <h5 className="cs-sim-group-title cs-sim-group-hit">
+                    ✅ 实际会创建预警（{simulationResult.filter(h => !h.suppressed).length} 条）
+                  </h5>
+                  <div className="cs-sim-list">
+                    {simulationResult.filter(h => !h.suppressed).map((hit, idx) => (
+                      <div key={`hit-${idx}`} className="cs-sim-item cs-sim-item-hit">
+                        <div className="cs-sim-header">
+                          <span className="cs-sim-client">{hit.clientCode}</span>
+                          <span className="cs-sim-trigger">
+                            {hit.triggerType === "risk_assessment" ? "⚠️ 风险评估" : "📝 个案记录"}
+                          </span>
+                        </div>
+                        <p className="cs-sim-reasons">{hit.reasons.join("；")}</p>
+                        <div className="cs-sim-tag">将创建新预警</div>
+                      </div>
+                    ))}
                   </div>
-                  <p className="cs-sim-reasons">{hit.reasons.join("；")}</p>
                 </div>
-              ))}
-            </div>
+              )}
+
+              {simulationResult.filter(h => h.suppressed).length > 0 && (
+                <div className="cs-sim-group">
+                  <h5 className="cs-sim-group-title cs-sim-group-suppressed">
+                    🚫 命中但被重复抑制（{simulationResult.filter(h => h.suppressed).length} 条）
+                  </h5>
+                  <div className="cs-sim-list">
+                    {simulationResult.filter(h => h.suppressed).map((hit, idx) => (
+                      <div key={`suppressed-${idx}`} className="cs-sim-item cs-sim-item-suppressed">
+                        <div className="cs-sim-header">
+                          <span className="cs-sim-client">{hit.clientCode}</span>
+                          <span className="cs-sim-trigger">
+                            {hit.triggerType === "risk_assessment" ? "⚠️ 风险评估" : "📝 个案记录"}
+                          </span>
+                        </div>
+                        <p className="cs-sim-reasons">{hit.reasons.join("；")}</p>
+                        <p className="cs-sim-suppress-reason">
+                          {hit.suppressReason}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
