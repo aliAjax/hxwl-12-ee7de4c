@@ -387,6 +387,16 @@ export default function SessionSummaryExport({
                         handleScopeChange(scope.key);
                       } else {
                         onToast(permCheck.reason || "无权限选择此导出类型", "error");
+                        createAuditLog({
+                          actorRole: currentRole,
+                          actorName: session?.userName,
+                          action: "view",
+                          targetType: "export_scope",
+                          targetLabel: scope.label,
+                          permissionChecked: permAction,
+                          status: "denied",
+                          message: `尝试选择导出范围被拒绝: ${scope.label}`,
+                        });
                       }
                     }}
                     title={permCheck.allowed ? "" : permCheck.reason}

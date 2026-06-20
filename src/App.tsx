@@ -906,7 +906,13 @@ function TimelineSection({
           <p>会谈时间线</p>
           <h2>按来访者查看</h2>
         </div>
-        <button className="primary-action" onClick={openNewForm}>新增时间线</button>
+        <ProtectedButton
+          action="timeline.create"
+          className="primary-action"
+          onClick={openNewForm}
+        >
+          新增时间线
+        </ProtectedButton>
       </div>
 
       <div className="tl-client-tabs">
@@ -977,7 +983,13 @@ function TimelineSection({
           </div>
           <div className="tl-form-actions">
             <button onClick={handleCancel}>取消</button>
-            <button className="primary-action" onClick={handleSave}>保存</button>
+            <ProtectedButton
+              action={editingRecord?.id ? "timeline.edit" : "timeline.create"}
+              className="primary-action"
+              onClick={handleSave}
+            >
+              保存
+            </ProtectedButton>
           </div>
         </div>
       )}
@@ -1014,8 +1026,19 @@ function TimelineSection({
                 </div>
               </div>
               <div className="tl-card-actions">
-                <button onClick={() => openEditForm(record)}>编辑</button>
-                <button className="tl-btn-danger" onClick={() => handleDelete(record.id)}>删除</button>
+                <ProtectedButton
+                  action="timeline.edit"
+                  onClick={() => openEditForm(record)}
+                >
+                  编辑
+                </ProtectedButton>
+                <ProtectedButton
+                  action="timeline.delete"
+                  className="tl-btn-danger"
+                  onClick={() => handleDelete(record.id)}
+                >
+                  删除
+                </ProtectedButton>
               </div>
             </div>
           </article>
@@ -1101,7 +1124,13 @@ function RiskAssessmentSection({
           <p>风险等级评估</p>
           <h2>五维筛查与跟进建议</h2>
         </div>
-        <button className="primary-action" onClick={openForm}>新增评估</button>
+        <ProtectedButton
+          action="risk.create"
+          className="primary-action"
+          onClick={openForm}
+        >
+          新增评估
+        </ProtectedButton>
       </div>
 
       <div className="tl-client-tabs">
@@ -1189,7 +1218,13 @@ function RiskAssessmentSection({
 
           <div className="tl-form-actions">
             <button onClick={() => setIsFormOpen(false)}>取消</button>
-            <button className="primary-action" onClick={handleSave}>保存评估</button>
+            <ProtectedButton
+              action="risk.create"
+              className="primary-action"
+              onClick={handleSave}
+            >
+              保存评估
+            </ProtectedButton>
           </div>
         </div>
       )}
@@ -1206,10 +1241,11 @@ function RiskAssessmentSection({
                 {riskLevelLabels[assess.level]}
               </span>
               <span className="risk-score-small">评分 {assess.totalScore}</span>
-              <button
+              <ProtectedButton
+                action="risk.delete"
                 className="tl-btn-danger"
                 onClick={() => onDeleteAssessment(assess.id)}
-              >删除</button>
+              >删除</ProtectedButton>
             </div>
             <div className="risk-dim-scores">
               {(Object.keys(assess.dimensions) as (keyof RiskDimensions)[]).map(key => (
@@ -1432,43 +1468,48 @@ function TodoReminderView({
                   <div className="todo-reminder-actions">
                     {rem.type === "overdue" && (
                       <>
-                        <button
+                        <ProtectedButton
+                          action="goal.edit"
                           className="todo-action-btn todo-action-complete"
                           onClick={() => onQuickAction(rem.goal, "complete")}
                         >
                           ✅ 标记练习已完成
-                        </button>
-                        <button
+                        </ProtectedButton>
+                        <ProtectedButton
+                          action="goal.edit"
                           className="todo-action-btn todo-action-extend"
                           onClick={() => onQuickAction(rem.goal, "extend")}
                         >
                           📅 延期至下周
-                        </button>
+                        </ProtectedButton>
                       </>
                     )}
                     {rem.type === "dueSoon" && (
                       <>
-                        <button
+                        <ProtectedButton
+                          action="goal.edit"
                           className="todo-action-btn todo-action-complete"
                           onClick={() => onQuickAction(rem.goal, "complete")}
                         >
                           ✅ 提前完成练习
-                        </button>
-                        <button
+                        </ProtectedButton>
+                        <ProtectedButton
+                          action="goal.edit"
                           className="todo-action-btn todo-action-extend"
                           onClick={() => onQuickAction(rem.goal, "extend")}
                         >
                           📅 延期一周
-                        </button>
+                        </ProtectedButton>
                       </>
                     )}
                     {rem.type === "stale" && (
-                      <button
+                      <ProtectedButton
+                        action="goal.edit"
                         className="todo-action-btn todo-action-advance"
                         onClick={() => onQuickAction(rem.goal, "advance")}
                       >
                         ⏩ 推进一步并更新
-                      </button>
+                      </ProtectedButton>
                     )}
                   </div>
                 )}
@@ -1660,7 +1701,13 @@ function GoalTrackingSection({
           <p>干预目标追踪</p>
           <h2>阶段目标与进度管理</h2>
         </div>
-        <button className="primary-action" onClick={openNewForm}>新增目标</button>
+        <ProtectedButton
+          action="goal.create"
+          className="primary-action"
+          onClick={openNewForm}
+        >
+          新增目标
+        </ProtectedButton>
       </div>
 
       <div className="tl-client-tabs">
@@ -1818,7 +1865,13 @@ function GoalTrackingSection({
           </div>
           <div className="tl-form-actions">
             <button onClick={handleCancel}>取消</button>
-            <button className="primary-action" onClick={handleSave}>保存目标</button>
+            <ProtectedButton
+              action={editingGoal?.id ? "goal.edit" : "goal.create"}
+              className="primary-action"
+              onClick={handleSave}
+            >
+              保存目标
+            </ProtectedButton>
           </div>
         </div>
       )}
@@ -1858,8 +1911,19 @@ function GoalTrackingSection({
             <div className="goal-card-footer">
               <span className="goal-card-created">创建于 {goal.createdAt}</span>
               <div className="goal-card-actions">
-                <button onClick={() => openEditForm(goal)}>编辑</button>
-                <button className="tl-btn-danger" onClick={() => onDeleteGoal(goal.id)}>删除</button>
+                <ProtectedButton
+                  action="goal.edit"
+                  onClick={() => openEditForm(goal)}
+                >
+                  编辑
+                </ProtectedButton>
+                <ProtectedButton
+                  action="goal.delete"
+                  className="tl-btn-danger"
+                  onClick={() => onDeleteGoal(goal.id)}
+                >
+                  删除
+                </ProtectedButton>
               </div>
             </div>
           </article>
@@ -1993,6 +2057,18 @@ function CrisisWarningSection({
   const openHandleForm = (warning: CrisisWarning, toStatus: CrisisWarningStatus) => {
     const perm = ACTION_TO_PERMISSION[toStatus];
     if (perm && !hasPermission(perm)) {
+      createAuditLog({
+        actorRole: role,
+        actorName: session?.userName,
+        action: "update",
+        targetType: "crisis_warning",
+        targetId: warning.id,
+        targetLabel: warning.clientCode,
+        permissionChecked: perm,
+        status: "denied",
+        details: { toStatus },
+        message: `尝试打开危机预警${crisisWarningStatusLabels[toStatus]}表单被拒绝`,
+      });
       return;
     }
     setHandleForm({
@@ -2008,11 +2084,6 @@ function CrisisWarningSection({
     if (!handleForm.handler || !handleForm.description) return;
     const perm = ACTION_TO_PERMISSION[handleForm.toStatus];
     if (!perm) return;
-    try {
-      assertPermission(role, perm, `危机预警${crisisWarningStatusLabels[handleForm.toStatus]}`);
-    } catch (e) {
-      return;
-    }
     const action: CrisisWarningAction = {
       id: "cwa" + nextCrisisWarningActionId++,
       fromStatus: selectedWarning.status,
@@ -2049,12 +2120,11 @@ function CrisisWarningSection({
             <h2>{selectedWarning.clientCode} — 预警详情</h2>
           </div>
           <div className="section-actions">
-            <PermissionGate action="crisis.delete">
-              <button
-                className="tl-btn-danger"
-                onClick={() => onDeleteWarning(selectedWarning.id)}
-              >删除预警</button>
-            </PermissionGate>
+            <ProtectedButton
+              action="crisis.delete"
+              className="tl-btn-danger"
+              onClick={() => onDeleteWarning(selectedWarning.id)}
+            >删除预警</ProtectedButton>
             <button onClick={() => setSelectedWarning(null)}>返回列表</button>
           </div>
         </div>
@@ -2263,7 +2333,13 @@ function CrisisWarningSection({
 
           <div className="tl-form-actions">
             <button onClick={cancelHandle}>取消</button>
-            <button className="primary-action" onClick={submitHandle}>确认处理</button>
+            <ProtectedButton
+              action={handleForm ? ACTION_TO_PERMISSION[handleForm.toStatus] || "crisis.confirm" : "crisis.confirm"}
+              className="primary-action"
+              onClick={submitHandle}
+            >
+              确认处理
+            </ProtectedButton>
           </div>
         </div>
       </section>
@@ -2836,8 +2912,19 @@ function SupervisionWorkbench({
 
           <div className="sup-edit-actions">
             <button onClick={handleCancelEdit}>取消</button>
-            <button onClick={handleSaveDraft}>保存草稿</button>
-            <button className="primary-action" onClick={handleSubmitForSupervision}>提交督导</button>
+            <ProtectedButton
+              action="supervision.create"
+              onClick={handleSaveDraft}
+            >
+              保存草稿
+            </ProtectedButton>
+            <ProtectedButton
+              action="supervision.submit"
+              className="primary-action"
+              onClick={handleSubmitForSupervision}
+            >
+              提交督导
+            </ProtectedButton>
           </div>
         </div>
       </section>
@@ -2936,7 +3023,13 @@ function SupervisionWorkbench({
 
           <div className="sup-edit-actions">
             <button onClick={handleCancelFeedback}>取消</button>
-            <button className="primary-action" onClick={handleSaveFeedback}>提交督导意见</button>
+            <ProtectedButton
+              action="supervision.feedback"
+              className="primary-action"
+              onClick={handleSaveFeedback}
+            >
+              提交督导意见
+            </ProtectedButton>
           </div>
         </div>
       </section>
@@ -2961,13 +3054,31 @@ function SupervisionWorkbench({
           <div style={{ display: "flex", gap: "8px" }}>
             <button onClick={() => setSelectedRecord(null)}>返回列表</button>
             {role === "counselor" && selectedRecord.status === "draft" && (
-              <button className="primary-action" onClick={() => openEditRecord(selectedRecord)}>编辑</button>
+              <ProtectedButton
+                action="supervision.create"
+                className="primary-action"
+                onClick={() => openEditRecord(selectedRecord)}
+              >
+                编辑
+              </ProtectedButton>
             )}
             {role === "supervisor" && (
               selectedRecord.status === "pending" ? (
-                <button className="primary-action" onClick={() => openFeedbackForm(selectedRecord)}>给出督导意见</button>
+                <ProtectedButton
+                  action="supervision.feedback"
+                  className="primary-action"
+                  onClick={() => openFeedbackForm(selectedRecord)}
+                >
+                  给出督导意见
+                </ProtectedButton>
               ) : selectedRecord.status === "feedback" ? (
-                <button className="primary-action" onClick={() => openFeedbackForm(selectedRecord)}>追加督导意见</button>
+                <ProtectedButton
+                  action="supervision.feedback"
+                  className="primary-action"
+                  onClick={() => openFeedbackForm(selectedRecord)}
+                >
+                  追加督导意见
+                </ProtectedButton>
               ) : null
             )}
           </div>
@@ -3150,7 +3261,13 @@ function SupervisionWorkbench({
             </button>
           </div>
           {role === "counselor" && (
-            <button className="primary-action" onClick={openNewRecord}>新建申请</button>
+            <ProtectedButton
+              action="supervision.create"
+              className="primary-action"
+              onClick={openNewRecord}
+            >
+              新建申请
+            </ProtectedButton>
           )}
         </div>
       </div>
@@ -4322,6 +4439,22 @@ function App() {
     [currentRole, showToast, createAudit]
   );
 
+  const checkPermWithAudit = useCallback((
+    permission: PermissionAction,
+    targetType: Parameters<typeof createAudit>[0]["targetType"],
+    contextMessage?: string,
+    targetId?: string,
+    targetLabel?: string
+  ): boolean => {
+    try {
+      assertPerm(permission, contextMessage);
+      return true;
+    } catch (e) {
+      handlePermissionDenied(permission, targetType, targetId, targetLabel);
+      return false;
+    }
+  }, [assertPerm, handlePermissionDenied]);
+
   const filteredData = useMemo(() => {
     return filterDataByRole(
       {
@@ -4529,12 +4662,7 @@ function App() {
   }, [showToast]);
 
   const handleResetToSampleData = useCallback(async () => {
-    try {
-      assertPerm("system.reset", "重置示例数据");
-    } catch (e) {
-      showToast("无权限执行此操作", "error");
-      return;
-    }
+    if (!checkPermWithAudit("system.reset", "system", "重置示例数据")) return;
     if (!confirm("确定要重置所有数据吗？此操作将清空所有修改并恢复为示例数据。")) {
       return;
     }
@@ -4596,12 +4724,7 @@ function App() {
   }, []);
 
   const openNewCaseForm = useCallback(() => {
-    try {
-      assertPerm("case.create", "新增个案记录");
-    } catch (e) {
-      showToast("无权限新增个案记录", "error");
-      return;
-    }
+    if (!checkPermWithAudit("case.create", "case_record", "新增个案记录")) return;
     setEditingCaseRecord({
       id: "",
       clientCode: "",
@@ -4618,26 +4741,16 @@ function App() {
   }, [assertPerm, showToast]);
 
   const openEditCaseForm = useCallback((record: CaseRecord) => {
-    try {
-      assertPerm("case.edit", "编辑个案记录");
-    } catch (e) {
-      showToast("无权限编辑个案记录", "error");
-      return;
-    }
+    if (!checkPermWithAudit("case.edit", "case_record", "编辑个案记录", record.id, record.clientCode)) return;
     setEditingCaseRecord({ ...record });
     setIsCaseFormOpen(true);
-  }, [assertPerm, showToast]);
+  }, [checkPermWithAudit]);
 
   const handleSaveCaseRecord = useCallback(() => {
     if (!editingCaseRecord) return;
     const isEdit = !!editingCaseRecord.id;
     const permAction = isEdit ? "case.edit" : "case.create";
-    try {
-      assertPerm(permAction, isEdit ? "编辑个案记录" : "新增个案记录");
-    } catch (e) {
-      showToast("无权限执行此操作", "error");
-      return;
-    }
+    if (!checkPermWithAudit(permAction, "case_record", isEdit ? "编辑个案记录" : "新增个案记录", editingCaseRecord.id, editingCaseRecord.clientCode)) return;
     if (!editingCaseRecord.clientCode || !editingCaseRecord.consultationTopic
       || !editingCaseRecord.mainConcern || !editingCaseRecord.intervention) {
       showToast("请填写必填项（来访者代号、咨询主题、主要困扰、干预方法）");
@@ -4708,13 +4821,8 @@ function App() {
   }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit, persistCrisisWarning, assessments, crisisWarnings]);
 
   const handleDeleteCaseRecord = useCallback((id: string) => {
-    try {
-      assertPerm("case.delete", "删除个案记录");
-    } catch (e) {
-      showToast("无权限删除个案记录", "error");
-      return;
-    }
     const record = caseRecords.find(r => r.id === id);
+    if (!checkPermWithAudit("case.delete", "case_record", "删除个案记录", id, record?.clientCode)) return;
     setCaseRecords(prev => prev.filter(r => r.id !== id));
     persistCaseRecordDelete(id);
     createAudit({
@@ -4735,12 +4843,7 @@ function App() {
   }, []);
 
   const handleAddTimeline = useCallback((record: TimelineRecord) => {
-    try {
-      assertPerm("timeline.create", "新增时间线记录");
-    } catch (e) {
-      showToast("无权限新增时间线记录", "error");
-      return;
-    }
+    if (!checkPermWithAudit("timeline.create", "timeline_record", "新增时间线记录", record.id, record.clientCode)) return;
     setTimeline(prev => {
       const next = [...prev, record];
       persistTimeline(next);
@@ -4760,12 +4863,7 @@ function App() {
   }, [persistTimeline, persistCounters, assertPerm, showToast, createAudit]);
 
   const handleUpdateTimeline = useCallback((record: TimelineRecord) => {
-    try {
-      assertPerm("timeline.edit", "编辑时间线记录");
-    } catch (e) {
-      showToast("无权限编辑时间线记录", "error");
-      return;
-    }
+    if (!checkPermWithAudit("timeline.edit", "timeline_record", "编辑时间线记录", record.id, record.clientCode)) return;
     setTimeline(prev => {
       const next = prev.map(r => r.id === record.id ? record : r);
       persistTimeline(next);
@@ -4783,13 +4881,8 @@ function App() {
   }, [persistTimeline, assertPerm, showToast, createAudit]);
 
   const handleDeleteTimeline = useCallback((id: string) => {
-    try {
-      assertPerm("timeline.delete", "删除时间线记录");
-    } catch (e) {
-      showToast("无权限删除时间线记录", "error");
-      return;
-    }
     const record = timeline.find(r => r.id === id);
+    if (!checkPermWithAudit("timeline.delete", "timeline_record", "删除时间线记录", id, record?.clientCode)) return;
     setTimeline(prev => prev.filter(r => r.id !== id));
     persistTimelineDelete(id);
     createAudit({
@@ -4804,12 +4897,7 @@ function App() {
   }, [persistTimelineDelete, assertPerm, showToast, createAudit, timeline]);
 
   const handleAddAssessment = useCallback((a: RiskAssessment) => {
-    try {
-      assertPerm("risk.create", "新增风险评估");
-    } catch (e) {
-      showToast("无权限新增风险评估", "error");
-      return;
-    }
+    if (!checkPermWithAudit("risk.create", "risk_assessment", "新增风险评估", a.id, a.clientCode)) return;
     setAssessments(prev => [...prev, a]);
     persistAssessment(a);
     persistCounters();
@@ -4845,13 +4933,8 @@ function App() {
   }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit, persistCrisisWarning, crisisWarnings]);
 
   const handleDeleteAssessment = useCallback((id: string) => {
-    try {
-      assertPerm("risk.delete", "删除风险评估");
-    } catch (e) {
-      showToast("无权限删除风险评估", "error");
-      return;
-    }
     const a = assessments.find(x => x.id === id);
+    if (!checkPermWithAudit("risk.delete", "risk_assessment", "删除风险评估", id, a?.clientCode)) return;
     setAssessments(prev => prev.filter(a => a.id !== id));
     persistAssessmentDelete(id);
     createAudit({
@@ -4866,12 +4949,7 @@ function App() {
   }, [persistAssessmentDelete, assessments, assertPerm, showToast, createAudit]);
 
   const handleAddGoal = useCallback((g: InterventionGoal) => {
-    try {
-      assertPerm("goal.create", "新增目标追踪");
-    } catch (e) {
-      showToast("无权限新增目标追踪", "error");
-      return;
-    }
+    if (!checkPermWithAudit("goal.create", "intervention_goal", "新增目标追踪", g.id, g.clientCode)) return;
     setGoals(prev => [...prev, g]);
     persistGoal(g);
     persistCounters();
@@ -4887,12 +4965,7 @@ function App() {
   }, [persistGoal, persistCounters, assertPerm, showToast, createAudit]);
 
   const handleUpdateGoal = useCallback((g: InterventionGoal) => {
-    try {
-      assertPerm("goal.edit", "编辑目标追踪");
-    } catch (e) {
-      showToast("无权限编辑目标追踪", "error");
-      return;
-    }
+    if (!checkPermWithAudit("goal.edit", "intervention_goal", "编辑目标追踪", g.id, g.clientCode)) return;
     setGoals(prev => prev.map(item => item.id === g.id ? g : item));
     persistGoal(g);
     createAudit({
@@ -4907,13 +4980,8 @@ function App() {
   }, [persistGoal, assertPerm, showToast, createAudit]);
 
   const handleDeleteGoal = useCallback((id: string) => {
-    try {
-      assertPerm("goal.delete", "删除目标追踪");
-    } catch (e) {
-      showToast("无权限删除目标追踪", "error");
-      return;
-    }
     const g = goals.find(x => x.id === id);
+    if (!checkPermWithAudit("goal.delete", "intervention_goal", "删除目标追踪", id, g?.clientCode)) return;
     setGoals(prev => prev.filter(g => g.id !== id));
     persistGoalDelete(id);
     createAudit({
@@ -4928,12 +4996,7 @@ function App() {
   }, [persistGoalDelete, goals, assertPerm, showToast, createAudit]);
 
   const handleAddSupervisionRecord = useCallback((record: SupervisionRecord) => {
-    try {
-      assertPerm("supervision.create", "新增督导申请");
-    } catch (e) {
-      showToast("无权限新增督导申请", "error");
-      return;
-    }
+    if (!checkPermWithAudit("supervision.create", "supervision_record", "新增督导申请", record.id, record.clientCode)) return;
     setSupervisionRecords(prev => [...prev, record]);
     createAudit({
       action: "create",
@@ -4948,12 +5011,7 @@ function App() {
   }, [showToast, assertPerm, createAudit]);
 
   const handleUpdateSupervisionRecord = useCallback((record: SupervisionRecord) => {
-    try {
-      assertPerm("supervision.create", "编辑督导申请");
-    } catch (e) {
-      showToast("无权限编辑督导申请", "error");
-      return;
-    }
+    if (!checkPermWithAudit("supervision.create", "supervision_record", "编辑督导申请", record.id, record.clientCode)) return;
     setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
     createAudit({
       action: "update",
@@ -4968,12 +5026,7 @@ function App() {
   }, [showToast, assertPerm, createAudit]);
 
   const handleSubmitForSupervision = useCallback((record: SupervisionRecord) => {
-    try {
-      assertPerm("supervision.submit", "提交督导评审");
-    } catch (e) {
-      showToast("无权限提交督导评审", "error");
-      return;
-    }
+    if (!checkPermWithAudit("supervision.submit", "supervision_record", "提交督导评审", record.id, record.clientCode)) return;
     setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
     createAudit({
       action: "submit",
@@ -4988,12 +5041,7 @@ function App() {
   }, [showToast, assertPerm, createAudit]);
 
   const handleSaveDraft = useCallback((record: SupervisionRecord) => {
-    try {
-      assertPerm("supervision.create", "保存督导草稿");
-    } catch (e) {
-      showToast("无权限保存督导草稿", "error");
-      return;
-    }
+    if (!checkPermWithAudit("supervision.create", "supervision_record", "保存督导草稿", record.id, record.clientCode)) return;
     setSupervisionRecords(prev => prev.map(r => r.id === record.id ? record : r));
     createAudit({
       action: "update",
@@ -5009,13 +5057,8 @@ function App() {
   }, [showToast, assertPerm, createAudit]);
 
   const handleAddFeedback = useCallback((recordId: string, feedback: SupervisionFeedback) => {
-    try {
-      assertPerm("supervision.feedback", "提交督导反馈");
-    } catch (e) {
-      showToast("无权限提交督导反馈", "error");
-      return;
-    }
     const record = supervisionRecords.find(r => r.id === recordId);
+    if (!checkPermWithAudit("supervision.feedback", "supervision_feedback", "提交督导反馈", recordId, record?.clientCode)) return;
     setSupervisionRecords(prev => prev.map(r => {
       if (r.id !== recordId) return r;
       return {
@@ -5054,25 +5097,7 @@ function App() {
   }, [persistCrisisWarning, persistCounters, createAudit]);
 
   const handleUpdateCrisisWarning = useCallback((w: CrisisWarning, action: CrisisWarningAction, permission: PermissionAction) => {
-    try {
-      assertPerm(permission, `危机预警${crisisWarningStatusLabels[action.toStatus]}`);
-    } catch (e) {
-      showToast("无权限执行此操作", "error");
-      createAudit({
-        action: "update",
-        targetType: "crisis_warning",
-        targetId: w.id,
-        targetLabel: w.clientCode,
-        permissionChecked: permission,
-        status: "denied",
-        details: {
-          fromStatus: action.fromStatus,
-          toStatus: action.toStatus,
-        },
-        message: `尝试${crisisWarningStatusLabels[action.toStatus]}危机预警被拒绝`,
-      });
-      return;
-    }
+    if (!checkPermWithAudit(permission, "crisis_warning", `危机预警${crisisWarningStatusLabels[action.toStatus]}`, w.id, w.clientCode)) return;
     setCrisisWarnings(prev => prev.map(item => item.id === w.id ? w : item));
     persistCrisisWarning(w);
     createAudit({
@@ -5094,21 +5119,8 @@ function App() {
   }, [persistCrisisWarning, createAudit, showToast, assertPerm]);
 
   const handleDeleteCrisisWarning = useCallback((id: string) => {
-    try {
-      assertPerm("crisis.delete", "删除危机预警");
-    } catch (e) {
-      showToast("无权限删除危机预警", "error");
-      createAudit({
-        action: "delete",
-        targetType: "crisis_warning",
-        targetId: id,
-        permissionChecked: "crisis.delete",
-        status: "denied",
-        message: "尝试删除危机预警被拒绝",
-      });
-      return;
-    }
     const w = crisisWarnings.find(x => x.id === id);
+    if (!checkPermWithAudit("crisis.delete", "crisis_warning", "删除危机预警", id, w?.clientCode)) return;
     setCrisisWarnings(prev => prev.filter(x => x.id !== id));
     persistCrisisWarningDelete(id);
     createAudit({
@@ -5840,10 +5852,10 @@ function App() {
 
               <PermissionGate action="data.overview">
                 <DataOverviewSection
-                  timeline={filteredData.timeline}
-                  assessments={filteredData.assessments}
-                  goals={filteredData.goals}
-                  caseRecords={filteredData.caseRecords}
+                  timeline={timeline}
+                  assessments={assessments}
+                  goals={goals}
+                  caseRecords={caseRecords}
                 />
               </PermissionGate>
             </>
