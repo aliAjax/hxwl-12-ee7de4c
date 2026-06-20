@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import "./styles.css";
 import SessionSummaryExport from "./components/SessionSummaryExport";
+import ExportHistoryCenter from "./components/ExportHistoryCenter";
 import {
   useAuth,
   ProtectedButton,
@@ -4378,10 +4379,12 @@ function ToastContainer({ toasts }: { toasts: Toast[] }) {
 }
 
 type AppTab = "caseRecords" | "timeline" | "risk" | "goals" | "crisisWarning" | "supervision" | "export" | "audit";
+type ExportSubTab = "generate" | "history";
 
 function App() {
   const { currentRole, switchRole, session, hasPermission: hasPerm, assertPermission: assertPerm } = useAuth();
   const [activeTab, setActiveTab] = useState<AppTab>("caseRecords");
+  const [exportSubTab, setExportSubTab] = useState<ExportSubTab>("generate");
   const [timeline, setTimeline] = useState<TimelineRecord[]>(initialTimelineData);
   const [assessments, setAssessments] = useState<RiskAssessment[]>(initialRiskAssessments);
   const [goals, setGoals] = useState<InterventionGoal[]>(initialGoals);
@@ -5857,14 +5860,33 @@ function App() {
 
               {activeTab === "export" && (
                 <ProtectedMenu menu="menu.export">
-                  <SessionSummaryExport
-                    clientCodes={displayClientCodes}
-                    timeline={exportData.timeline}
-                    assessments={exportData.assessments}
-                    goals={exportData.goals}
-                    caseRecords={exportData.caseRecords}
-                    onToast={showToast}
-                  />
+                  <div className="export-sub-tabs">
+                    <button
+                      className={`export-sub-tab ${exportSubTab === "generate" ? "active" : ""}`}
+                      onClick={() => setExportSubTab("generate")}
+                    >
+                      📤 咨询摘要导出
+                    </button>
+                    <button
+                      className={`export-sub-tab ${exportSubTab === "history" ? "active" : ""}`}
+                      onClick={() => setExportSubTab("history")}
+                    >
+                      📋 导出历史中心
+                    </button>
+                  </div>
+                  {exportSubTab === "generate" && (
+                    <SessionSummaryExport
+                      clientCodes={displayClientCodes}
+                      timeline={exportData.timeline}
+                      assessments={exportData.assessments}
+                      goals={exportData.goals}
+                      caseRecords={exportData.caseRecords}
+                      onToast={showToast}
+                    />
+                  )}
+                  {exportSubTab === "history" && (
+                    <ExportHistoryCenter onToast={showToast} />
+                  )}
                 </ProtectedMenu>
               )}
 

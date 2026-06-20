@@ -13,6 +13,7 @@ import {
   type ExportResult,
 } from "../utils/summaryGenerator";
 import { getMaskedItemLabel } from "../utils/desensitize";
+import { createExportHistory } from "../utils/exportHistory";
 import {
   useAuth,
   ProtectedButton,
@@ -211,6 +212,20 @@ export default function SessionSummaryExport({
           maskedItemCount: result.allMaskedItems.length,
         });
 
+        createExportHistory({
+          operatorRole: currentRole,
+          operatorName: session?.userName,
+          actionType: "generate",
+          scopeKey: activeScope.key,
+          scopeLabel: activeScope.label,
+          desensitized: activeScope.desensitized,
+          includes: activeScope.includes,
+          targetClientCode: needsClientSelection ? selectedClient : undefined,
+          dateRange: { start: startDate, end: endDate },
+          recordCount: result.meta.recordCount,
+          snapshot: result.content,
+        });
+
         const dateRangeStr = startDate || endDate ? `（${dateRangeLabel}）` : "";
         const targetStr = needsClientSelection ? `${selectedClient} 的` : "机构";
         onToast(`已生成 ${targetStr}${activeScope.label}${dateRangeStr}`, "success");
@@ -266,6 +281,21 @@ export default function SessionSummaryExport({
         },
         message: `导出内容已复制到剪贴板：${exportResult.meta.scopeLabel}`,
       });
+
+      createExportHistory({
+        operatorRole: currentRole,
+        operatorName: session?.userName,
+        actionType: "copy",
+        scopeKey: exportResult.meta.scopeKey,
+        scopeLabel: exportResult.meta.scopeLabel,
+        desensitized: exportResult.meta.desensitized,
+        includes: exportResult.meta.includes,
+        targetClientCode: exportResult.meta.targetClientCode,
+        dateRange: exportResult.meta.dateRange,
+        recordCount: exportResult.meta.recordCount,
+        snapshot: exportResult.content,
+      });
+
       onToast("导出内容已复制到剪贴板", "success");
     } else {
       onToast("复制失败，请手动选择文本复制", "error");
@@ -314,6 +344,20 @@ export default function SessionSummaryExport({
         fileName: a.download,
       },
       message: `导出文件已下载：${exportResult.meta.scopeLabel}`,
+    });
+
+    createExportHistory({
+      operatorRole: currentRole,
+      operatorName: session?.userName,
+      actionType: "download",
+      scopeKey: exportResult.meta.scopeKey,
+      scopeLabel: exportResult.meta.scopeLabel,
+      desensitized: exportResult.meta.desensitized,
+      includes: exportResult.meta.includes,
+      targetClientCode: exportResult.meta.targetClientCode,
+      dateRange: exportResult.meta.dateRange,
+      recordCount: exportResult.meta.recordCount,
+      snapshot: exportResult.content,
     });
 
     onToast("导出文件已开始下载", "success");
