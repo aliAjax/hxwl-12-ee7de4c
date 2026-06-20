@@ -1,4 +1,4 @@
-import type { TimelineRecord, RiskAssessment, InterventionGoal, CaseRecord, CrisisWarning } from "./App";
+import type { TimelineRecord, RiskAssessment, InterventionGoal, CaseRecord, CrisisWarning, CrisisStrategy } from "./App";
 
 const DB_NAME = "hxwl12_case_archive";
 const DB_VERSION = 3;
@@ -649,4 +649,23 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;
   return "未知错误";
+}
+
+export async function loadCrisisStrategy(defaultStrategy: CrisisStrategy): Promise<CrisisStrategy> {
+  const db = await openDB();
+  try {
+    const saved = await getMeta<CrisisStrategy>(db, "crisisStrategy");
+    return saved || defaultStrategy;
+  } finally {
+    db.close();
+  }
+}
+
+export async function saveCrisisStrategy(strategy: CrisisStrategy): Promise<void> {
+  const db = await openDB();
+  try {
+    await setMeta(db, "crisisStrategy", strategy);
+  } finally {
+    db.close();
+  }
 }

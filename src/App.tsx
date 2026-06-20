@@ -36,6 +36,8 @@ import {
   addDBListener,
   resetToSampleData,
   checkDBSupport,
+  loadCrisisStrategy,
+  saveCrisisStrategy,
   type AppData,
   type DBStatus,
   type DBEventType,
@@ -217,6 +219,47 @@ export interface CrisisWarning {
   actions: CrisisWarningAction[];
 }
 
+export interface CrisisStrategyDimensionThreshold {
+  dimension: keyof RiskDimensions;
+  minScore: number;
+}
+
+export interface CrisisStrategyStatusTimeLimit {
+  status: CrisisWarningStatus;
+  hours: number;
+}
+
+export interface CrisisStrategy {
+  id: string;
+  name: string;
+  keywords: string[];
+  riskLevelTriggers: RiskLevel[];
+  dimensionThresholds: CrisisStrategyDimensionThreshold[];
+  suppressionWindowMinutes: number;
+  statusTimeLimits: CrisisStrategyStatusTimeLimit[];
+  updatedAt: string;
+  updatedBy: string;
+}
+
+const DEFAULT_CRISIS_STRATEGY: CrisisStrategy = {
+  id: "default",
+  name: "默认预警策略",
+  keywords: ["自伤", "自杀", "自残", "失控", "轻生", "寻死", "不想活", "伤害自己", "结束生命", "崩溃"],
+  riskLevelTriggers: ["high"],
+  dimensionThresholds: [
+    { dimension: "selfHarm", minScore: 3 },
+  ],
+  suppressionWindowMinutes: 30,
+  statusTimeLimits: [
+    { status: "pending", hours: 24 },
+    { status: "confirmed", hours: 48 },
+    { status: "escalated", hours: 72 },
+    { status: "referred", hours: 168 },
+  ],
+  updatedAt: new Date().toISOString(),
+  updatedBy: "系统",
+};
+
 export interface CaseRecord {
   id: string;
   clientCode: string;
@@ -311,24 +354,32 @@ const initialCaseRecords: CaseRecord[] = [
   }
 ];
 
-const CRISIS_KEYWORDS = ["自伤", "自杀", "自残", "失控", "轻生", "寻死", "不想活", "伤害自己", "结束生命", "崩溃"];
-
-function detectCrisisSignals(text: string): string[] {
+function detectCrisisSignals(text: string, keywords: string[]): string[] {
   if (!text) return [];
-  return CRISIS_KEYWORDS.filter(kw => text.includes(kw));
+  return keywords.filter(kw => text.includes(kw));
 }
 
 function shouldTriggerCrisisWarning(
   riskLevel: RiskLevel,
-  textFields: string[]
+  dimensions: RiskDimensions | undefined,
+  textFields: string[],
+  strategy: CrisisStrategy
 ): { trigger: boolean; reasons: string[] } {
   const reasons: string[] = [];
-  if (riskLevel === "high") {
-    reasons.push("风险等级评为高风险");
+  if (strategy.riskLevelTriggers.includes(riskLevel)) {
+    reasons.push(`风险等级评为${riskLevelLabels[riskLevel]}`);
+  }
+  if (dimensions) {
+    for (const threshold of strategy.dimensionThresholds) {
+      const score = dimensions[threshold.dimension];
+      if (score >= threshold.minScore) {
+        reasons.push(`${dimensionOptions[threshold.dimension].label}得分${score}分，达到阈值${threshold.minScore}分`);
+      }
+    }
   }
   const allCrisisSignals: string[] = [];
   for (const text of textFields) {
-    const signals = detectCrisisSignals(text);
+    const signals = detectCrisisSignals(text, strategy.keywords);
     allCrisisSignals.push(...signals);
   }
   const uniqueSignals = Array.from(new Set(allCrisisSignals));
@@ -338,19 +389,71 @@ function shouldTriggerCrisisWarning(
   return { trigger: reasons.length > 0, reasons };
 }
 
-const DEBOUNCE_WINDOW_MS = 30 * 60 * 1000;
-
 function isDuplicateWarning(
   existingWarnings: CrisisWarning[],
   clientCode: string,
-  now: number
+  now: number,
+  suppressionWindowMinutes: number
 ): boolean {
   return existingWarnings.some(w => {
     if (w.clientCode !== clientCode) return false;
     if (w.status === "closed") return false;
     const created = new Date(w.createdAt).getTime();
-    return now - created < DEBOUNCE_WINDOW_MS;
+    return now - created < suppressionWindowMinutes * 60 * 1000;
   });
+}
+
+function simulateCrisisStrategy(
+  assessments: RiskAssessment[],
+  caseRecords: CaseRecord[],
+  existingWarnings: CrisisWarning[],
+  strategy: CrisisStrategy
+): { clientCode: string; triggerType: "risk_assessment" | "case_record"; triggerId: string; reasons: string[] }[] {
+  const hits: { clientCode: string; triggerType: "risk_assessment" | "case_record"; triggerId: string; reasons: string[] }[] = [];
+  const now = Date.now();
+  for (const a of assessments) {
+    const { trigger, reasons } = shouldTriggerCrisisWarning(a.level, a.dimensions, [a.summary], strategy);
+    if (trigger && !isDuplicateWarning(existingWarnings, a.clientCode, now, strategy.suppressionWindowMinutes)) {
+      hits.push({ clientCode: a.clientCode, triggerType: "risk_assessment", triggerId: a.id, reasons });
+    }
+  }
+  for (const cr of caseRecords) {
+    const latestRisk = assessments
+      .filter(a => a.clientCode === cr.clientCode)
+      .sort(compareRiskTime)[0];
+    const currentRiskLevel = latestRisk?.level || "stable";
+    const { trigger, reasons } = shouldTriggerCrisisWarning(
+      currentRiskLevel,
+      latestRisk?.dimensions,
+      [cr.mainConcern, cr.intervention, cr.nextGoal],
+      strategy
+    );
+    if (trigger && !isDuplicateWarning(existingWarnings, cr.clientCode, now, strategy.suppressionWindowMinutes)) {
+      hits.push({ clientCode: cr.clientCode, triggerType: "case_record", triggerId: cr.id, reasons });
+    }
+  }
+  return hits;
+}
+
+function getTimeLimitStatus(
+  warnings: CrisisWarning[],
+  strategy: CrisisStrategy
+): { warning: CrisisWarning; status: CrisisWarningStatus; overdue: boolean; remainingMs: number }[] {
+  const now = Date.now();
+  return warnings
+    .filter(w => w.status !== "closed")
+    .map(w => {
+      const limit = strategy.statusTimeLimits.find(l => l.status === w.status);
+      if (!limit) return null;
+      const created = new Date(w.createdAt).getTime();
+      const updated = new Date(w.updatedAt).getTime();
+      const lastTime = Math.max(created, updated);
+      const elapsed = now - lastTime;
+      const limitMs = limit.hours * 60 * 60 * 1000;
+      const remainingMs = limitMs - elapsed;
+      return { warning: w, status: w.status, overdue: remainingMs < 0, remainingMs };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
 }
 
 const crisisWarningStatusColors: Record<CrisisWarningStatus, string> = {
@@ -1963,6 +2066,248 @@ const triggerTypeLabels: Record<CrisisWarning["triggerType"], string> = {
   case_record: "个案记录",
 };
 
+function CrisisStrategyPanel({
+  strategy,
+  onSave,
+  assessments,
+  caseRecords,
+  warnings,
+}: {
+  strategy: CrisisStrategy;
+  onSave: (strategy: CrisisStrategy) => void;
+  assessments: RiskAssessment[];
+  caseRecords: CaseRecord[];
+  warnings: CrisisWarning[];
+}) {
+  const [editForm, setEditForm] = useState<CrisisStrategy>(strategy);
+  const [newKeyword, setNewKeyword] = useState("");
+  const [newDimThreshold, setNewDimThreshold] = useState<keyof RiskDimensions>("selfHarm");
+  const [newDimScore, setNewDimScore] = useState(3);
+  const [simulationResult, setSimulationResult] = useState<{ clientCode: string; triggerType: "risk_assessment" | "case_record"; triggerId: string; reasons: string[] }[] | null>(null);
+  const [isSimulating, setIsSimulating] = useState(false);
+
+  useEffect(() => {
+    setEditForm(strategy);
+  }, [strategy]);
+
+  const handleAddKeyword = () => {
+    const kw = newKeyword.trim();
+    if (!kw || editForm.keywords.includes(kw)) return;
+    setEditForm(prev => ({ ...prev, keywords: [...prev.keywords, kw] }));
+    setNewKeyword("");
+  };
+
+  const handleRemoveKeyword = (kw: string) => {
+    setEditForm(prev => ({ ...prev, keywords: prev.keywords.filter(k => k !== kw) }));
+  };
+
+  const handleToggleRiskLevel = (level: RiskLevel) => {
+    setEditForm(prev => ({
+      ...prev,
+      riskLevelTriggers: prev.riskLevelTriggers.includes(level)
+        ? prev.riskLevelTriggers.filter(l => l !== level)
+        : [...prev.riskLevelTriggers, level],
+    }));
+  };
+
+  const handleAddDimThreshold = () => {
+    if (editForm.dimensionThresholds.some(t => t.dimension === newDimThreshold && t.minScore === newDimScore)) return;
+    setEditForm(prev => ({
+      ...prev,
+      dimensionThresholds: [
+        ...prev.dimensionThresholds.filter(t => t.dimension !== newDimThreshold),
+        { dimension: newDimThreshold, minScore: newDimScore },
+      ],
+    }));
+  };
+
+  const handleRemoveDimThreshold = (dim: keyof RiskDimensions) => {
+    setEditForm(prev => ({
+      ...prev,
+      dimensionThresholds: prev.dimensionThresholds.filter(t => t.dimension !== dim),
+    }));
+  };
+
+  const handleUpdateTimeLimit = (status: CrisisWarningStatus, hours: number) => {
+    setEditForm(prev => ({
+      ...prev,
+      statusTimeLimits: prev.statusTimeLimits.some(l => l.status === status)
+        ? prev.statusTimeLimits.map(l => l.status === status ? { ...l, hours } : l)
+        : [...prev.statusTimeLimits, { status, hours }],
+    }));
+  };
+
+  const handleSimulate = () => {
+    setIsSimulating(true);
+    setSimulationResult(null);
+    setTimeout(() => {
+      const result = simulateCrisisStrategy(assessments, caseRecords, warnings, editForm);
+      setSimulationResult(result);
+      setIsSimulating(false);
+    }, 300);
+  };
+
+  const handleSave = () => {
+    onSave(editForm);
+    setSimulationResult(null);
+  };
+
+  return (
+    <div className="cs-panel">
+      <div className="cs-panel-header">
+        <h3>📋 当前策略：{strategy.name}</h3>
+        <p className="cs-panel-meta">
+          上次更新：{new Date(strategy.updatedAt).toLocaleString()} · 更新人：{strategy.updatedBy}
+        </p>
+      </div>
+
+      <div className="cs-section">
+        <h4>🔑 危机关键词</h4>
+        <p className="cs-section-desc">录入内容中包含以下关键词将触发预警检测</p>
+        <div className="cs-keywords">
+          {editForm.keywords.map(kw => (
+            <span key={kw} className="cs-keyword-tag">
+              {kw}
+              <button className="cs-keyword-remove" onClick={() => handleRemoveKeyword(kw)}>×</button>
+            </span>
+          ))}
+        </div>
+        <div className="cs-keyword-input">
+          <input
+            value={newKeyword}
+            onChange={e => setNewKeyword(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleAddKeyword()}
+            placeholder="输入关键词后按回车添加"
+          />
+          <button onClick={handleAddKeyword}>添加</button>
+        </div>
+      </div>
+
+      <div className="cs-section">
+        <h4>⚠️ 风险等级触发条件</h4>
+        <p className="cs-section-desc">勾选的风险等级将自动触发预警</p>
+        <div className="cs-risk-level-toggles">
+          {(["stable", "watch", "medium", "high"] as RiskLevel[]).map(level => (
+            <label key={level} className={`cs-risk-toggle ${editForm.riskLevelTriggers.includes(level) ? "active" : ""}`}>
+              <input
+                type="checkbox"
+                checked={editForm.riskLevelTriggers.includes(level)}
+                onChange={() => handleToggleRiskLevel(level)}
+              />
+              <span className={`risk-badge ${riskLevelColors[level]}`}>{riskLevelLabels[level]}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="cs-section">
+        <h4>📊 五维风险阈值</h4>
+        <p className="cs-section-desc">任一维度得分达到或超过设定阈值时触发预警</p>
+        <div className="cs-dim-thresholds">
+          {editForm.dimensionThresholds.map(t => (
+            <div key={t.dimension} className="cs-dim-threshold-item">
+              <span className="cs-dim-name">{dimensionOptions[t.dimension].label}</span>
+              <span className="cs-dim-score">≥ {t.minScore}分</span>
+              <button className="cs-dim-remove" onClick={() => handleRemoveDimThreshold(t.dimension)}>移除</button>
+            </div>
+          ))}
+          {editForm.dimensionThresholds.length === 0 && (
+            <p className="cs-empty-hint">暂无维度阈值配置</p>
+          )}
+        </div>
+        <div className="cs-dim-add">
+          <select value={newDimThreshold} onChange={e => setNewDimThreshold(e.target.value as keyof RiskDimensions)}>
+            {(Object.keys(dimensionOptions) as (keyof RiskDimensions)[]).map(key => (
+              <option key={key} value={key}>{dimensionOptions[key].label}</option>
+            ))}
+          </select>
+          <span>得分 ≥</span>
+          <input type="number" min={1} max={4} value={newDimScore} onChange={e => setNewDimScore(Number(e.target.value))} />
+          <button onClick={handleAddDimThreshold}>添加阈值</button>
+        </div>
+      </div>
+
+      <div className="cs-section">
+        <h4>🚫 重复预警抑制窗口</h4>
+        <p className="cs-section-desc">同一来访者在此时间内已有未关闭预警时，不重复创建</p>
+        <div className="cs-suppression-input">
+          <input
+            type="number"
+            min={1}
+            value={editForm.suppressionWindowMinutes}
+            onChange={e => setEditForm(prev => ({ ...prev, suppressionWindowMinutes: Number(e.target.value) || 30 }))}
+          />
+          <span>分钟</span>
+        </div>
+      </div>
+
+      <div className="cs-section">
+        <h4>⏰ 状态处理时限</h4>
+        <p className="cs-section-desc">预警在各状态的允许停留时间，超时将高亮提醒</p>
+        <div className="cs-time-limits">
+          {(["pending", "confirmed", "escalated", "referred"] as CrisisWarningStatus[]).map(status => {
+            const existing = editForm.statusTimeLimits.find(l => l.status === status);
+            return (
+              <div key={status} className="cs-time-limit-row">
+                <span className={`cw-status-badge small ${crisisWarningStatusColors[status]}`}>
+                  {crisisWarningStatusLabels[status]}
+                </span>
+                <input
+                  type="number"
+                  min={1}
+                  value={existing?.hours ?? ""}
+                  onChange={e => handleUpdateTimeLimit(status, Number(e.target.value) || 24)}
+                  placeholder="不限"
+                />
+                <span>小时</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="cs-actions">
+        <button className="primary-action" onClick={handleSave}>
+          💾 保存策略（仅影响后续触发）
+        </button>
+        <button
+          className="cs-simulate-btn"
+          onClick={handleSimulate}
+          disabled={isSimulating}
+        >
+          {isSimulating ? "模拟中…" : "🧪 模拟检查（不创建预警）"}
+        </button>
+      </div>
+
+      {simulationResult !== null && (
+        <div className="cs-simulation-result">
+          <h4>🧪 模拟检查结果</h4>
+          <p className="cs-sim-summary">
+            当前策略会对现有数据命中 <strong>{simulationResult.length}</strong> 条记录
+          </p>
+          {simulationResult.length === 0 ? (
+            <p className="cs-empty-hint">当前策略不会对现有数据触发新的预警</p>
+          ) : (
+            <div className="cs-sim-list">
+              {simulationResult.map((hit, idx) => (
+                <div key={idx} className="cs-sim-item">
+                  <div className="cs-sim-header">
+                    <span className="cs-sim-client">{hit.clientCode}</span>
+                    <span className="cs-sim-trigger">
+                      {hit.triggerType === "risk_assessment" ? "⚠️ 风险评估" : "📝 个案记录"}
+                    </span>
+                  </div>
+                  <p className="cs-sim-reasons">{hit.reasons.join("；")}</p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CrisisWarningSection({
   warnings,
   onAddWarning,
@@ -1972,6 +2317,8 @@ function CrisisWarningSection({
   role,
   assessments,
   caseRecords,
+  crisisStrategy,
+  onSaveCrisisStrategy,
 }: {
   warnings: CrisisWarning[];
   onAddWarning: (w: CrisisWarning) => void;
@@ -1981,6 +2328,8 @@ function CrisisWarningSection({
   role: UserRole;
   assessments: RiskAssessment[];
   caseRecords: CaseRecord[];
+  crisisStrategy: CrisisStrategy;
+  onSaveCrisisStrategy: (strategy: CrisisStrategy) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<CrisisWarningStatus | "all">("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
@@ -1991,6 +2340,7 @@ function CrisisWarningSection({
     handler: string;
     description: string;
   } | null>(null);
+  const [cwSubTab, setCwSubTab] = useState<"kanban" | "strategy">("kanban");
 
   const { hasPermission, session } = useAuth();
 
@@ -2355,10 +2705,30 @@ function CrisisWarningSection({
           <p>危机预警闭环</p>
           <h2>预警看板</h2>
           <p className="section-subtitle">
-            高风险评估或危机信号自动触发预警 · 同一个个案30分钟内不重复触发
+            高风险评估或危机信号自动触发预警 · 同一个个案{crisisStrategy.suppressionWindowMinutes}分钟内不重复触发
           </p>
         </div>
+        {hasPermission("crisis.strategy") && (
+          <div className="section-actions">
+            <button
+              className={`role-chip ${cwSubTab === "kanban" ? "active" : ""}`}
+              onClick={() => setCwSubTab("kanban")}
+            >📋 预警看板</button>
+            <button
+              className={`role-chip ${cwSubTab === "strategy" ? "active" : ""}`}
+              onClick={() => { setCwSubTab("strategy"); }}
+            >⚙️ 策略配置</button>
+          </div>
+        )}
       </div>
+
+      {cwSubTab === "kanban" && (
+        <>
+          {getTimeLimitStatus(warnings, crisisStrategy).filter(t => t.overdue).length > 0 && (
+            <div className="cw-time-limit-alert">
+              ⚠️ {getTimeLimitStatus(warnings, crisisStrategy).filter(t => t.overdue).length} 条预警已超处理时限
+            </div>
+          )}
 
       <div className="cw-kanban-metrics">
         <div className="cw-kanban-metric cw-metric-pending">
@@ -2414,10 +2784,12 @@ function CrisisWarningSection({
         {filteredWarnings.length === 0 && (
           <p className="tl-empty">暂无危机预警记录</p>
         )}
-        {filteredWarnings.map(warning => (
+        {filteredWarnings.map(warning => {
+          const timeLimitInfo = getTimeLimitStatus(warnings, crisisStrategy).find(t => t.warning.id === warning.id);
+          return (
           <article
             key={warning.id}
-            className={`cw-warning-card ${warning.status === "pending" ? "cw-card-pulse" : ""}`}
+            className={`cw-warning-card ${warning.status === "pending" ? "cw-card-pulse" : ""} ${timeLimitInfo?.overdue ? "cw-card-overdue" : ""}`}
             onClick={() => setSelectedWarning(warning)}
           >
             <div className="cw-card-left">
@@ -2439,6 +2811,16 @@ function CrisisWarningSection({
                 <span className="cw-card-time">
                   {new Date(warning.createdAt).toLocaleString()}
                 </span>
+                {timeLimitInfo && !timeLimitInfo.overdue && (
+                  <span className="cw-card-time-limit">
+                    ⏳ 剩余{Math.max(0, Math.round(timeLimitInfo.remainingMs / 3600000))}h
+                  </span>
+                )}
+                {timeLimitInfo?.overdue && (
+                  <span className="cw-card-time-limit cw-overdue-text">
+                    ⚠️ 已超时
+                  </span>
+                )}
               </div>
             </div>
             <div className="cw-card-right">
@@ -2452,8 +2834,21 @@ function CrisisWarningSection({
               )}
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
+        </>
+      )}
+
+      {cwSubTab === "strategy" && hasPermission("crisis.strategy") && (
+        <CrisisStrategyPanel
+          strategy={crisisStrategy}
+          onSave={onSaveCrisisStrategy}
+          assessments={assessments}
+          caseRecords={caseRecords}
+          warnings={warnings}
+        />
+      )}
     </section>
   );
 }
@@ -4392,6 +4787,7 @@ function App() {
   const [caseRecords, setCaseRecords] = useState<CaseRecord[]>(initialCaseRecords);
   const [supervisionRecords, setSupervisionRecords] = useState<SupervisionRecord[]>(initialSupervisionRecords);
   const [crisisWarnings, setCrisisWarnings] = useState<CrisisWarning[]>(initialCrisisWarnings);
+  const [crisisStrategy, setCrisisStrategy] = useState<CrisisStrategy>(DEFAULT_CRISIS_STRATEGY);
   const [isLoading, setIsLoading] = useState(true);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dbStatus, setDbStatus] = useState<DBStatus>({ isSupported: true, isConnected: false, version: 0 });
@@ -4567,6 +4963,12 @@ function App() {
         nextGoalId = data.nextGoalId;
         nextCaseRecordId = data.nextCaseRecordId;
         nextCrisisWarningId = data.nextCrisisWarningId;
+        try {
+          const savedStrategy = await loadCrisisStrategy(DEFAULT_CRISIS_STRATEGY);
+          setCrisisStrategy(savedStrategy);
+        } catch (e) {
+          console.warn("[DB] 加载预警策略失败，使用默认策略:", e);
+        }
         isLoadedRef.current = true;
         setIsLoading(false);
         showToast("个案档案数据加载完成", "success");
@@ -4817,9 +5219,11 @@ function App() {
     const currentRiskLevel = latestRisk?.level || "stable";
     const { trigger, reasons } = shouldTriggerCrisisWarning(
       currentRiskLevel,
-      [savedRecord.mainConcern, savedRecord.intervention, savedRecord.nextGoal]
+      latestRisk?.dimensions,
+      [savedRecord.mainConcern, savedRecord.intervention, savedRecord.nextGoal],
+      crisisStrategy
     );
-    if (trigger && !isDuplicateWarning(crisisWarnings, savedRecord.clientCode, Date.now())) {
+    if (trigger && !isDuplicateWarning(crisisWarnings, savedRecord.clientCode, Date.now(), crisisStrategy.suppressionWindowMinutes)) {
       const warningNow = new Date().toISOString();
       const warning: CrisisWarning = {
         id: "cw" + nextCrisisWarningId++,
@@ -4840,7 +5244,7 @@ function App() {
     setIsCaseFormOpen(false);
     setEditingCaseRecord(null);
     showToast("个案记录已保存", "success");
-  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit, persistCrisisWarning, assessments, crisisWarnings]);
+  }, [editingCaseRecord, persistCaseRecord, persistCounters, showToast, assertPerm, createAudit, persistCrisisWarning, assessments, crisisWarnings, crisisStrategy]);
 
   const handleDeleteCaseRecord = useCallback((id: string) => {
     const record = caseRecords.find(r => r.id === id);
@@ -4933,8 +5337,8 @@ function App() {
       details: { level: a.level },
       message: "风险评估已创建",
     });
-    const { trigger, reasons } = shouldTriggerCrisisWarning(a.level, [a.summary]);
-    if (trigger && !isDuplicateWarning(crisisWarnings, a.clientCode, Date.now())) {
+    const { trigger, reasons } = shouldTriggerCrisisWarning(a.level, a.dimensions, [a.summary], crisisStrategy);
+    if (trigger && !isDuplicateWarning(crisisWarnings, a.clientCode, Date.now(), crisisStrategy.suppressionWindowMinutes)) {
       const now = new Date().toISOString();
       const warning: CrisisWarning = {
         id: "cw" + nextCrisisWarningId++,
@@ -4952,7 +5356,7 @@ function App() {
       persistCounters();
       showToast(`已自动创建危机预警：${a.clientCode}`, "info");
     }
-  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit, persistCrisisWarning, crisisWarnings]);
+  }, [persistAssessment, persistCounters, assertPerm, showToast, createAudit, persistCrisisWarning, crisisWarnings, crisisStrategy]);
 
   const handleDeleteAssessment = useCallback((id: string) => {
     const a = assessments.find(x => x.id === id);
@@ -5160,6 +5564,37 @@ function App() {
     });
     showToast("危机预警已删除", "info");
   }, [persistCrisisWarningDelete, crisisWarnings, createAudit, showToast, assertPerm]);
+
+  const handleSaveCrisisStrategy = useCallback((strategy: CrisisStrategy) => {
+    if (!checkPermWithAudit("crisis.strategy", "crisis_strategy", "保存预警策略")) return;
+    const updated: CrisisStrategy = {
+      ...strategy,
+      updatedAt: new Date().toISOString(),
+      updatedBy: session?.userName || "机构管理员",
+    };
+    setCrisisStrategy(updated);
+    saveCrisisStrategy(updated).catch(err => {
+      console.error("[DB] 保存预警策略失败:", err);
+      showToast("预警策略保存失败");
+    });
+    createAudit({
+      action: "update",
+      targetType: "crisis_strategy",
+      targetId: updated.id,
+      targetLabel: updated.name,
+      permissionChecked: "crisis.strategy",
+      status: "success",
+      details: {
+        keywords: updated.keywords,
+        riskLevelTriggers: updated.riskLevelTriggers,
+        dimensionThresholds: updated.dimensionThresholds,
+        suppressionWindowMinutes: updated.suppressionWindowMinutes,
+        statusTimeLimits: updated.statusTimeLimits,
+      },
+      message: `预警策略已更新：${updated.name}`,
+    });
+    showToast("预警策略已保存，仅影响后续触发判断", "success");
+  }, [assertPerm, showToast, createAudit, session?.userName]);
 
   const handleRoleChange = useCallback((role: UserRole) => {
     switchRole(role);
@@ -5834,6 +6269,8 @@ function App() {
                     role={currentRole}
                     assessments={filteredData.assessments}
                     caseRecords={filteredData.caseRecords}
+                    crisisStrategy={crisisStrategy}
+                    onSaveCrisisStrategy={handleSaveCrisisStrategy}
                   />
                 </ProtectedMenu>
               )}

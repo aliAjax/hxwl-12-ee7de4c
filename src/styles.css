@@ -5425,6 +5425,426 @@ button:disabled {
   }
 }
 
+.cs-panel {
+  padding: 20px;
+  background: var(--bg-surface, #f9fafb);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+}
+
+.cs-panel-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+}
+
+.cs-panel-header h3 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+}
+
+.cs-panel-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted, #9ca3af);
+}
+
+.cs-section {
+  margin-bottom: 24px;
+  padding: 16px 20px;
+  background: white;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 10px;
+}
+
+.cs-section h4 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary, #111827);
+}
+
+.cs-section-desc {
+  margin: 0 0 12px 0;
+  font-size: 12px;
+  color: var(--text-muted, #9ca3af);
+}
+
+.cs-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.cs-keyword-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.cs-keyword-remove {
+  background: none;
+  border: none;
+  color: #dc2626;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.cs-keyword-remove:hover {
+  background: #fee2e2;
+}
+
+.cs-keyword-input {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.cs-keyword-input input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+
+.cs-keyword-input input:focus {
+  outline: none;
+  border-color: var(--primary, #7c3aed);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+
+.cs-keyword-input button {
+  padding: 8px 16px;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  background: white;
+  color: var(--text-primary, #111827);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cs-keyword-input button:hover {
+  background: var(--bg-surface, #f9fafb);
+  border-color: var(--primary, #7c3aed);
+}
+
+.cs-risk-level-toggles {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cs-risk-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 2px solid var(--border-subtle, #e5e7eb);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+}
+
+.cs-risk-toggle.active {
+  border-color: var(--primary, #7c3aed);
+  background: #f5f3ff;
+}
+
+.cs-risk-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--primary, #7c3aed);
+}
+
+.cs-dim-thresholds {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.cs-dim-threshold-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+}
+
+.cs-dim-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #92400e;
+}
+
+.cs-dim-score {
+  font-size: 13px;
+  color: #78350f;
+}
+
+.cs-dim-remove {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #dc2626;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.cs-dim-remove:hover {
+  background: #fee2e2;
+}
+
+.cs-dim-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-dim-add select,
+.cs-dim-add input[type="number"] {
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.cs-dim-add select:focus,
+.cs-dim-add input[type="number"]:focus {
+  outline: none;
+  border-color: var(--primary, #7c3aed);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+
+.cs-dim-add span {
+  font-size: 13px;
+  color: var(--text-secondary, #374151);
+}
+
+.cs-dim-add button {
+  padding: 6px 14px;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  background: white;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cs-dim-add button:hover {
+  background: var(--bg-surface, #f9fafb);
+  border-color: var(--primary, #7c3aed);
+}
+
+.cs-suppression-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-suppression-input input {
+  width: 100px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  font-size: 14px;
+  font-family: inherit;
+}
+
+.cs-suppression-input input:focus {
+  outline: none;
+  border-color: var(--primary, #7c3aed);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+
+.cs-suppression-input span {
+  font-size: 13px;
+  color: var(--text-secondary, #374151);
+}
+
+.cs-time-limits {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cs-time-limit-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.cs-time-limit-row input {
+  width: 80px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-subtle, #e5e7eb);
+  border-radius: 8px;
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.cs-time-limit-row input:focus {
+  outline: none;
+  border-color: var(--primary, #7c3aed);
+  box-shadow: 0 0 0 3px rgba(124,58,237,0.1);
+}
+
+.cs-time-limit-row span {
+  font-size: 13px;
+  color: var(--text-secondary, #374151);
+}
+
+.cs-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle, #e5e7eb);
+}
+
+.cs-simulate-btn {
+  padding: 10px 20px;
+  border: 2px solid #0f766e;
+  border-radius: 8px;
+  background: white;
+  color: #0f766e;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cs-simulate-btn:hover {
+  background: #f0fdfa;
+}
+
+.cs-simulate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.cs-simulation-result {
+  margin-top: 20px;
+  padding: 16px 20px;
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  border-radius: 10px;
+}
+
+.cs-simulation-result h4 {
+  margin: 0 0 8px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #134e4a;
+}
+
+.cs-sim-summary {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  color: #115e59;
+}
+
+.cs-sim-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cs-sim-item {
+  padding: 10px 14px;
+  background: white;
+  border: 1px solid #ccfbf1;
+  border-radius: 8px;
+}
+
+.cs-sim-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.cs-sim-client {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.cs-sim-trigger {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.cs-sim-reasons {
+  margin: 0;
+  font-size: 12px;
+  color: #78350f;
+  line-height: 1.4;
+}
+
+.cs-empty-hint {
+  margin: 0;
+  padding: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: #9ca3af;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px dashed #e5e7eb;
+}
+
+.cw-card-overdue {
+  border-color: #fca5a5 !important;
+  background: #fef2f2 !important;
+}
+
+.cw-card-time-limit {
+  font-size: 11px;
+  color: #92400e;
+}
+
+.cw-overdue-text {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.cw-time-limit-alert {
+  padding: 10px 16px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
 .case-views-bar {
   display: flex;
   align-items: center;
