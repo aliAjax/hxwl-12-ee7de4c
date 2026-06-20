@@ -889,4 +889,87 @@ export function downloadBackupFile(backup: BackupFile): void {
   URL.revokeObjectURL(url);
 }
 
+export function prepareImportDataByMode(
+  backup: BackupFile,
+  preview: ImportPreview,
+  mode: ImportMode
+): {
+  dataToImport: BackupData;
+  skippedIds: Map<string, string[]>;
+  description: string;
+} {
+  const skippedIds = new Map<string, string[]>();
+  const conflictIdsByStore = new Map<string, Set<string>>();
+
+  for (const conflict of preview.conflicts) {
+    const storeKey = conflict.store;
+    if (!conflictIdsByStore.has(storeKey)) {
+      conflictIdsByStore.set(storeKey, new Set());
+    }
+    conflictIdsByStore.get(storeKey)!.add(conflict.id);
+  }
+
+  const storeKeyMap: Record<string, keyof BackupData> = {
+    "个案记录": "caseRecords",
+    "会谈时间线": "timeline",
+    "风险评估": "riskAssessments",
+    "干预目标": "goals",
+    "危机预警": "crisisWarnings",
+  };
+
+  const filterByStore = <T extends { id: string }>(
+    items: T[],
+    storeLabel: string,
+    shouldSkip: boolean
+  ): T[] => {
+    if (!shouldSkip) return items;
+    const conflictIds = conflictIdsByStore.get(storeLabel) || new Set();
+    const skipped: string[] = [];
+    const filtered = items.filter(item => {
+      if (conflictIds.has(item.id)) {
+        skipped.push(item.id);
+        return false;
+      }
+      return true;
+    });
+    if (skipped.length > 0) {
+      skippedIds.set(storeLabel, skipped);
+    }
+    return filtered;
+  };
+
+  let description = "";
+  let caseRecords = backup.data.caseRecords;
+  let timeline = backup.data.timeline;
+  let riskAssessments = backup.data.riskAssessments;
+  let goals = backup.data.goals;
+  let crisisWarnings = backup.data.crisisWarnings;
+
+  if (mode === "merge") {
+    description = "合并模式：保留当前数据，新增备份独有记录，更新冲突记录";
+  } else if (mode === "overwrite") {
+    description = "覆盖模式：删除所有当前数据，完全替换为备份数据";
+  } else if (mode === "skip") {
+    description = "跳过模式：仅导入备份独有记录，冲突时保留当前数据";
+    caseRecords = filterByStore(caseRecords, "个案记录", true);
+    timeline = filterByStore(timeline, "会谈时间线", true);
+    riskAssessments = filterByStore(riskAssessments, "风险评估", true);
+    goals = filterByStore(goals, "干预目标", true);
+    crisisWarnings = filterByStore(crisisWarnings, "危机预警", true);
+  }
+
+  return {
+    dataToImport: {
+      ...backup.data,
+      caseRecords,
+      timeline,
+      riskAssessments,
+      goals,
+      crisisWarnings,
+    },
+    skippedIds,
+    description,
+  };
+}
+
 export { AUDIT_STORAGE_KEY };

@@ -4,6 +4,7 @@ import {
   parseBackupFile,
   createBackupFile,
   generateImportPreview,
+  prepareImportDataByMode,
   BACKUP_FILE_MAGIC,
   BACKUP_FORMAT_VERSION,
   type BackupFile,
@@ -24,7 +25,7 @@ import {
 } from "./testHelpers";
 
 describe("备份文件结构校验", () => {
-  it("空对象应判定为无效并返回 INVALID_FORMAT 错误", () => {
+  it("空对象应判定为无效且不返回 INVALID_FORMAT 错误", () => {
     const result = validateBackupFile({});
     expect(result.valid).toBe(false);
     expect(result.structureValid).toBe(false);
@@ -575,5 +576,222 @@ describe("三种导入模式预期差异", () => {
     expect(validModes.includes("merge")).toBe(true);
     expect(validModes.includes("overwrite")).toBe(true);
     expect(validModes.includes("skip")).toBe(true);
+  });
+});
+
+describe("三种导入模式隔离测试（prepareImportDataByMode）", () => {
+  const buildIsolatedScenario = () => {
+    const backup = createBackupFileWithData();
+    const conflictId = backup.data.caseRecords[0].id;
+    const currentState = {
+      caseRecords: [
+        { ...backup.data.caseRecords[0], mainConcern: "当前系统版本的旧内容" },
+        { id: "cr_current_only", clientCode: "C-888", consultationTopic: "仅当前有", sessionDate: "2026-01-01", mainConcern: "仅当前系统存在", emotionalState: "平静", intervention: "无", nextGoal: "无", createdAt: "2026-01-01", updatedAt: "2026-01-01" },
+      ] as typeof backup.data.caseRecords,
+      timeline: backup.data.timeline,
+      riskAssessments: [],
+      goals: backup.data.goals,
+      crisisWarnings: [],
+    };
+    const preview = generateImportPreview(backup, currentState);
+    return { backup, currentState, preview, conflictId };
+  };
+
+  describe("merge 模式隔离测试", () => {
+    it("merge 模式应返回全部备份数据，不跳过任何记录", () => {
+      const { backup, preview } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "merge");
+
+      expect(result.description).toContain("合并模式");
+      expect(result.description).toContain("保留当前数据");
+      expect(result.description).toContain("更新冲突记录");
+
+      expect(result.dataToImport.caseRecords.length).toBe(backup.data.caseRecords.length);
+      expect(result.dataToImport.timeline.length).toBe(backup.data.timeline.length);
+      expect(result.dataToImport.riskAssessments.length).toBe(backup.data.riskAssessments.length);
+      expect(result.dataToImport.goals.length).toBe(backup.data.goals.length);
+      expect(result.dataToImport.crisisWarnings.length).toBe(backup.data.crisisWarnings.length);
+
+      expect(result.skippedIds.size).toBe(0);
+    });
+
+    it("merge 模式返回的数据应包含冲突 ID 的记录", () => {
+      const { backup, preview, conflictId } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "merge");
+
+      const hasConflictRecord = result.dataToImport.caseRecords.some(r => r.id === conflictId);
+      expect(hasConflictRecord).toBe(true);
+    });
+
+    it("merge 模式不影响当前系统独有的数据（由 db 层保证）", () => {
+      const { backup, preview } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "merge");
+
+      const backupIds = new Set(backup.data.caseRecords.map(r => r.id));
+      const currentOnlyId = "cr_current_only";
+      expect(backupIds.has(currentOnlyId)).toBe(false);
+    });
+  });
+
+  describe("overwrite 模式隔离测试", () => {
+    it("overwrite 模式应返回全部备份数据，不跳过任何记录", () => {
+      const { backup, preview } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "overwrite");
+
+      expect(result.description).toContain("覆盖模式");
+      expect(result.description).toContain("完全替换为备份数据");
+
+      expect(result.dataToImport.caseRecords.length).toBe(1);
+      expect(result.dataToImport.timeline.length).toBe(1);
+      expect(result.dataToImport.riskAssessments.length).toBe(1);
+      expect(result.dataToImport.goals.length).toBe(1);
+      expect(result.dataToImport.crisisWarnings.length).toBe(1);
+
+      expect(result.skippedIds.size).toBe(0);
+    });
+
+    it("overwrite 模式返回的数据应包含备份的冲突记录", () => {
+      const { backup, preview, conflictId } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "overwrite");
+
+      const caseRecordIds = result.dataToImport.caseRecords.map(r => r.id);
+      expect(caseRecordIds).toContain(conflictId);
+    });
+
+    it("overwrite 模式 meta 数据应完整保留", () => {
+      const { backup, preview } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "overwrite");
+
+      expect(result.dataToImport.meta).toBeDefined();
+      expect(result.dataToImport.meta.dbVersion).toBe(3);
+      expect(result.dataToImport.meta.nextTimelineId).toBe(2);
+    });
+  });
+
+  describe("skip 模式隔离测试", () => {
+    it("skip 模式应跳过冲突记录，仅导入无冲突记录", () => {
+      const { backup, preview, conflictId } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "skip");
+
+      expect(result.description).toContain("跳过模式");
+      expect(result.description).toContain("冲突时保留当前数据");
+
+      expect(result.skippedIds.size).toBe(1);
+      expect(result.skippedIds.has("个案记录")).toBe(true);
+      expect(result.skippedIds.get("个案记录")).toContain(conflictId);
+    });
+
+    it("skip 模式个案记录应排除冲突 ID 的记录", () => {
+      const { backup, preview, conflictId } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "skip");
+
+      const caseRecordIds = result.dataToImport.caseRecords.map(r => r.id);
+      expect(caseRecordIds).not.toContain(conflictId);
+      expect(result.dataToImport.caseRecords.length).toBe(0);
+    });
+
+    it("skip 模式无冲突的 store 应完整导入全部数据", () => {
+      const { backup, preview } = buildIsolatedScenario();
+      const result = prepareImportDataByMode(backup, preview, "skip");
+
+      expect(result.dataToImport.timeline.length).toBe(1);
+      expect(result.dataToImport.riskAssessments.length).toBe(1);
+      expect(result.dataToImport.goals.length).toBe(1);
+      expect(result.dataToImport.crisisWarnings.length).toBe(1);
+    });
+
+    it("skip 模式 timeline 存在冲突应跳过 timeline 冲突记录", () => {
+      const backup = createBackupFileWithData();
+      const currentState = {
+        caseRecords: [],
+        timeline: [{ ...backup.data.timeline[0], intervention: "旧版本" }],
+        riskAssessments: [],
+        goals: [],
+        crisisWarnings: [],
+      };
+      const preview = generateImportPreview(backup, currentState);
+      const result = prepareImportDataByMode(backup, preview, "skip");
+
+      expect(result.skippedIds.has("会谈时间线")).toBe(true);
+      expect(result.dataToImport.timeline.length).toBe(0);
+      expect(result.dataToImport.caseRecords.length).toBe(1);
+    });
+
+    it("skip 模式多 store 冲突应分别统计各 store 跳过的记录", () => {
+      const backup = createBackupFileWithData();
+      const currentState = {
+        caseRecords: [{ ...backup.data.caseRecords[0], mainConcern: "旧" }],
+        timeline: [{ ...backup.data.timeline[0], intervention: "旧" }],
+        riskAssessments: [{ ...backup.data.riskAssessments[0], summary: "旧" }],
+        goals: backup.data.goals,
+        crisisWarnings: backup.data.crisisWarnings,
+      };
+      const preview = generateImportPreview(backup, currentState);
+      const result = prepareImportDataByMode(backup, preview, "skip");
+
+      expect(result.skippedIds.size).toBe(3);
+      expect(result.skippedIds.has("个案记录")).toBe(true);
+      expect(result.skippedIds.has("会谈时间线")).toBe(true);
+      expect(result.skippedIds.has("风险评估")).toBe(true);
+      expect(result.skippedIds.has("干预目标")).toBe(false);
+    });
+  });
+
+  describe("三种模式横向对比隔离测试", () => {
+    it("无冲突场景下三种模式返回数据量一致", () => {
+      const backup = createBackupFileWithData();
+      const emptyState = { caseRecords: [], timeline: [], riskAssessments: [], goals: [], crisisWarnings: [] };
+      const preview = generateImportPreview(backup, emptyState);
+
+      const mergeResult = prepareImportDataByMode(backup, preview, "merge");
+      const overwriteResult = prepareImportDataByMode(backup, preview, "overwrite");
+      const skipResult = prepareImportDataByMode(backup, preview, "skip");
+
+      const mergeTotal = mergeResult.dataToImport.caseRecords.length + mergeResult.dataToImport.timeline.length;
+      const overwriteTotal = overwriteResult.dataToImport.caseRecords.length + overwriteResult.dataToImport.timeline.length;
+      const skipTotal = skipResult.dataToImport.caseRecords.length + skipResult.dataToImport.timeline.length;
+
+      expect(mergeTotal).toBe(overwriteTotal);
+      expect(overwriteTotal).toBe(skipTotal);
+      expect(mergeResult.skippedIds.size).toBe(0);
+      expect(overwriteResult.skippedIds.size).toBe(0);
+      expect(skipResult.skippedIds.size).toBe(0);
+    });
+
+    it("冲突场景下三种模式 description 不同", () => {
+      const { backup, preview } = buildIsolatedScenario();
+
+      const mergeResult = prepareImportDataByMode(backup, preview, "merge");
+      const overwriteResult = prepareImportDataByMode(backup, preview, "overwrite");
+      const skipResult = prepareImportDataByMode(backup, preview, "skip");
+
+      expect(mergeResult.description).not.toBe(overwriteResult.description);
+      expect(overwriteResult.description).not.toBe(skipResult.description);
+      expect(mergeResult.description).not.toBe(skipResult.description);
+    });
+
+    it("冲突场景下 skip 模式导入数据量少于 merge", () => {
+      const { backup, preview } = buildIsolatedScenario();
+
+      const mergeResult = prepareImportDataByMode(backup, preview, "merge");
+      const skipResult = prepareImportDataByMode(backup, preview, "skip");
+
+      const mergeCount = mergeResult.dataToImport.caseRecords.length;
+      const skipCount = skipResult.dataToImport.caseRecords.length;
+
+      expect(skipCount).toBeLessThan(mergeCount);
+      expect(mergeCount - skipCount).toBe(1);
+    });
+
+    it("冲突场景下 merge 和 overwrite 导入数据量相同但语义不同", () => {
+      const { backup, preview } = buildIsolatedScenario();
+
+      const mergeResult = prepareImportDataByMode(backup, preview, "merge");
+      const overwriteResult = prepareImportDataByMode(backup, preview, "overwrite");
+
+      expect(mergeResult.dataToImport.caseRecords.length).toBe(overwriteResult.dataToImport.caseRecords.length);
+      expect(mergeResult.description).toContain("保留当前数据");
+      expect(overwriteResult.description).toContain("删除所有当前数据");
+    });
   });
 });
