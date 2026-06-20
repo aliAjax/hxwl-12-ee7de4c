@@ -24,7 +24,8 @@ export type AuditTargetType =
   | "export_summary"
   | "system"
   | "audit_log"
-  | "user_session";
+  | "user_session"
+  | "dashboard_drilldown";
 
 export interface AuditLogEntry {
   id: string;
@@ -335,6 +336,7 @@ export const AUDIT_TARGET_LABELS: Record<AuditTargetType, string> = {
   system: "系统",
   audit_log: "审计日志",
   user_session: "用户会话",
+  dashboard_drilldown: "运营看板钻取",
 };
 
 export const AUDIT_STATUS_LABELS: Record<AuditLogEntry["status"], { label: string; color: string }> = {

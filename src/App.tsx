@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import "./styles.css";
 import SessionSummaryExport from "./components/SessionSummaryExport";
 import ExportHistoryCenter from "./components/ExportHistoryCenter";
+import AdminDashboard from "./components/AdminDashboard";
 import {
   useAuth,
   ProtectedButton,
@@ -135,6 +136,28 @@ export interface TimelineRecord {
 export type RiskLevel = "stable" | "watch" | "medium" | "high";
 
 export type GoalStatus = "active" | "paused" | "completed";
+
+export const riskLevelLabels: Record<RiskLevel, string> = {
+  stable: "稳定",
+  watch: "关注",
+  medium: "中风险",
+  high: "高风险"
+};
+
+export const riskLevelColors: Record<RiskLevel, string> = {
+  stable: "risk-stable",
+  watch: "risk-watch",
+  medium: "risk-medium",
+  high: "risk-high"
+};
+
+export const crisisWarningStatusLabels: Record<CrisisWarningStatus, string> = {
+  pending: "待处理",
+  confirmed: "已确认",
+  escalated: "已升级",
+  referred: "已转介",
+  closed: "已关闭"
+};
 
 export interface InterventionGoal {
   id: string;
@@ -329,14 +352,6 @@ function isDuplicateWarning(
     return now - created < DEBOUNCE_WINDOW_MS;
   });
 }
-
-const crisisWarningStatusLabels: Record<CrisisWarningStatus, string> = {
-  pending: "待处理",
-  confirmed: "已确认",
-  escalated: "已升级",
-  referred: "已转介",
-  closed: "已关闭"
-};
 
 const crisisWarningStatusColors: Record<CrisisWarningStatus, string> = {
   pending: "cw-status-pending",
@@ -641,20 +656,6 @@ let nextGoalId = 7;
 let nextCaseRecordId = 4;
 
 const emotionalOptions = ["平静", "低落", "焦虑", "紧张不安", "恐惧加剧", "回避防御", "低落委屈", "疲惫烦躁", "焦虑无助", "愤怒", "麻木"];
-
-const riskLevelLabels: Record<RiskLevel, string> = {
-  stable: "稳定",
-  watch: "关注",
-  medium: "中风险",
-  high: "高风险"
-};
-
-const riskLevelColors: Record<RiskLevel, string> = {
-  stable: "risk-stable",
-  watch: "risk-watch",
-  medium: "risk-medium",
-  high: "risk-high"
-};
 
 const dimensionOptions: Record<keyof RiskDimensions, { label: string; options: { score: number; text: string }[] }> = {
   sleep: {
@@ -5891,12 +5892,23 @@ function App() {
               )}
 
               <PermissionGate action="data.overview">
-                <DataOverviewSection
-                  timeline={timeline}
-                  assessments={assessments}
-                  goals={goals}
-                  caseRecords={caseRecords}
-                />
+                {currentRole === "admin" ? (
+                  <AdminDashboard
+                    timeline={timeline}
+                    assessments={assessments}
+                    goals={goals}
+                    caseRecords={caseRecords}
+                    crisisWarnings={crisisWarnings}
+                    role={currentRole}
+                  />
+                ) : (
+                  <DataOverviewSection
+                    timeline={timeline}
+                    assessments={assessments}
+                    goals={goals}
+                    caseRecords={caseRecords}
+                  />
+                )}
               </PermissionGate>
             </>
           )}
