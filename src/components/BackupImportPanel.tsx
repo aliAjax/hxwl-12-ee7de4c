@@ -4,6 +4,7 @@ import {
   validateBackupFile,
   parseBackupFile,
   generateImportPreview,
+  prepareImportDataByMode,
   downloadBackupFile,
   type BackupFile,
   type ValidationResult,
@@ -194,7 +195,7 @@ export default function BackupImportPanel({
   }, [caseRecords, timeline, riskAssessments, goals, crisisWarnings]);
 
   const handleImport = useCallback(async () => {
-    if (!backupFile || !session) return;
+    if (!backupFile || !session || !preview) return;
 
     setStep("importing");
 
@@ -208,13 +209,14 @@ export default function BackupImportPanel({
       idbSnapshot = await exportAllDataForBackup();
       auditSnapshot = snapshotAuditLogs();
 
-      const importData = {
-        caseRecords: backupFile.data.caseRecords || [],
-        timeline: backupFile.data.timeline || [],
-        riskAssessments: backupFile.data.riskAssessments || [],
-        goals: backupFile.data.goals || [],
-        crisisWarnings: backupFile.data.crisisWarnings || [],
-        meta: backupFile.data.meta || {
+      const preparedImport = prepareImportDataByMode(backupFile, preview, importMode);
+      const importData: ExportedBackupData = {
+        caseRecords: preparedImport.dataToImport.caseRecords || [],
+        timeline: preparedImport.dataToImport.timeline || [],
+        riskAssessments: preparedImport.dataToImport.riskAssessments || [],
+        goals: preparedImport.dataToImport.goals || [],
+        crisisWarnings: preparedImport.dataToImport.crisisWarnings || [],
+        meta: preparedImport.dataToImport.meta || {
           nextTimelineId: 1,
           nextRiskId: 1,
           nextGoalId: 1,
@@ -245,7 +247,8 @@ export default function BackupImportPanel({
         }
       }
 
-      const result = await importBackupDataAtomically(importData, importMode);
+      const dbImportMode = importMode === "overwrite" ? "overwrite" : "merge";
+      const result = await importBackupDataAtomically(importData, dbImportMode);
       if (!result.success) {
         throw new Error(result.error || "IndexedDB 数据导入失败");
       }
@@ -268,6 +271,7 @@ export default function BackupImportPanel({
             includeAuditLogs,
             importedCounts: result.importedCounts,
             auditLogsAdded: auditLogResult.added,
+            skippedIds: Object.fromEntries(preparedImport.skippedIds),
             backupFile: selectedFile?.name,
           },
           message: `数据导入成功，共导入 ${Object.values(result.importedCounts).reduce((a, b) => a + b, 0)} 条业务记录`,
@@ -339,7 +343,7 @@ export default function BackupImportPanel({
         // ignore audit log write failure in catch
       }
     }
-  }, [backupFile, session, importMode, includeAuditLogs, selectedFile?.name, onImportComplete]);
+  }, [backupFile, session, preview, importMode, includeAuditLogs, selectedFile?.name, onImportComplete]);
 
   const handleReset = useCallback(() => {
     setStep("idle");
@@ -475,7 +479,7 @@ export default function BackupImportPanel({
           <div className="backup-section-header">
             <h3>📥 导入备份</h3>
             <p className="backup-section-desc">
-              从备份文件恢复数据，支持合并模式和覆盖模式
+              从备份文件恢复数据，支持合并、覆盖和跳过模式
             </p>
           </div>
 
@@ -634,6 +638,17 @@ export default function BackupImportPanel({
                             />
                             <span className="mode-name">覆盖模式</span>
                             <span className="mode-desc">删除现有数据，完全替换为备份数据</span>
+                          </label>
+                          <label className={`mode-option ${importMode === "skip" ? "selected" : ""}`}>
+                            <input
+                              type="radio"
+                              name="importMode"
+                              value="skip"
+                              checked={importMode === "skip"}
+                              onChange={() => setImportMode("skip")}
+                            />
+                            <span className="mode-name">跳过模式</span>
+                            <span className="mode-desc">仅导入新增数据，冲突项保留当前版本</span>
                           </label>
                         </div>
                       </div>

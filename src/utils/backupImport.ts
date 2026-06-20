@@ -909,14 +909,6 @@ export function prepareImportDataByMode(
     conflictIdsByStore.get(storeKey)!.add(conflict.id);
   }
 
-  const storeKeyMap: Record<string, keyof BackupData> = {
-    "个案记录": "caseRecords",
-    "会谈时间线": "timeline",
-    "风险评估": "riskAssessments",
-    "干预目标": "goals",
-    "危机预警": "crisisWarnings",
-  };
-
   const filterByStore = <T extends { id: string }>(
     items: T[],
     storeLabel: string,
