@@ -5852,7 +5852,7 @@ function App() {
               goals={goals}
               crisisWarnings={crisisWarnings}
               onImportComplete={() => {
-                window.location.reload();
+                refreshFromDB();
               }}
             />
           ) : (
