@@ -42,14 +42,14 @@ interface PendingCrisisSummary {
   triggerType: string;
   createdAt: string;
   status: string;
-  triggerReasonSummary: string;
 }
 
 interface GoalCompletionDetail {
   clientCode: string;
-  goalTitle: string;
-  status: string;
-  progress: number;
+  totalGoals: number;
+  completedGoals: number;
+  activeGoals: number;
+  avgProgress: number;
   lastActionDate: string;
 }
 
@@ -200,9 +200,6 @@ export default function AdminDashboard({
         triggerType: w.triggerType === "risk_assessment" ? "风险评估" : "个案记录",
         createdAt: w.createdAt,
         status: crisisWarningStatusLabels[w.status],
-        triggerReasonSummary: w.triggerReason.length > 50
-          ? w.triggerReason.slice(0, 50) + "…"
-          : w.triggerReason,
       }));
 
     const totalGoals = goals.length;
@@ -213,13 +210,38 @@ export default function AdminDashboard({
     const goalCompletionRate = totalGoals > 0 ? Math.round((completedGoals / totalGoals) * 100) : 0;
     const avgGoalProgress = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
-    const goalCompletionDetails: GoalCompletionDetail[] = goals.map(g => ({
-      clientCode: g.clientCode,
-      goalTitle: g.goalTitle,
-      status: g.status === "active" ? "进行中" : g.status === "completed" ? "已完成" : "已暂停",
-      progress: g.totalSteps > 0 ? Math.round((g.completedSteps / g.totalSteps) * 100) : 0,
-      lastActionDate: g.lastActionDate,
-    }));
+    const goalDetailsByClient = new Map<string, {
+      total: number;
+      completed: number;
+      active: number;
+      totalSteps: number;
+      completedSteps: number;
+      lastDate: string;
+    }>();
+
+    goals.forEach(g => {
+      const entry = goalDetailsByClient.get(g.clientCode) || {
+        total: 0, completed: 0, active: 0, totalSteps: 0, completedSteps: 0, lastDate: ""
+      };
+      entry.total++;
+      if (g.status === "completed") entry.completed++;
+      if (g.status === "active") entry.active++;
+      entry.totalSteps += g.totalSteps;
+      entry.completedSteps += g.completedSteps;
+      if (g.lastActionDate > entry.lastDate) entry.lastDate = g.lastActionDate;
+      goalDetailsByClient.set(g.clientCode, entry);
+    });
+
+    const goalCompletionDetails: GoalCompletionDetail[] = Array.from(goalDetailsByClient.entries())
+      .map(([clientCode, data]) => ({
+        clientCode,
+        totalGoals: data.total,
+        completedGoals: data.completed,
+        activeGoals: data.active,
+        avgProgress: data.totalSteps > 0 ? Math.round((data.completedSteps / data.totalSteps) * 100) : 0,
+        lastActionDate: data.lastDate,
+      }))
+      .sort((a, b) => b.totalGoals - a.totalGoals);
 
     const topicMap = new Map<string, { caseCount: number; sessionCount: number }>();
     const topicClients = new Map<string, Set<string>>();
@@ -455,7 +477,6 @@ export default function AdminDashboard({
                     <th>预警编号</th>
                     <th>来访者代号</th>
                     <th>触发类型</th>
-                    <th>触发原因摘要</th>
                     <th>创建时间</th>
                     <th>状态</th>
                   </tr>
@@ -466,7 +487,6 @@ export default function AdminDashboard({
                       <td><strong>{item.id.toUpperCase()}</strong></td>
                       <td>{item.clientCode}</td>
                       <td>{item.triggerType}</td>
-                      <td className="drill-text-muted">{item.triggerReasonSummary}</td>
                       <td>{new Date(item.createdAt).toLocaleString()}</td>
                       <td>
                         <span className="drill-badge warning">{item.status}</span>
@@ -483,7 +503,7 @@ export default function AdminDashboard({
         return (
           <DrillDownModal
             title="目标完成明细"
-            subtitle={`所有干预目标的完成情况（共 ${dashboardData.goalCompletion.totalGoals} 个）`}
+            subtitle={`按来访者聚合统计（共 ${dashboardData.goalCompletion.details.length} 位来访者）`}
             onClose={handleCloseDrillDown}
           >
             <div className="drill-summary-row">
@@ -513,34 +533,33 @@ export default function AdminDashboard({
                 <thead>
                   <tr>
                     <th>来访者代号</th>
-                    <th>目标名称</th>
-                    <th>状态</th>
-                    <th>进度</th>
+                    <th>总目标数</th>
+                    <th>已完成</th>
+                    <th>进行中</th>
+                    <th>平均进度</th>
                     <th>最近行动日期</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboardData.goalCompletion.details.map((item, idx) => (
-                    <tr key={`${item.clientCode}-${idx}`}>
+                  {dashboardData.goalCompletion.details.map(item => (
+                    <tr key={item.clientCode}>
                       <td><strong>{item.clientCode}</strong></td>
-                      <td>{item.goalTitle}</td>
+                      <td>{item.totalGoals} 个</td>
                       <td>
-                        <span className={`drill-badge ${
-                          item.status === "已完成" ? "success" :
-                          item.status === "进行中" ? "info" : "muted"
-                        }`}>
-                          {item.status}
-                        </span>
+                        <span className="drill-badge success">{item.completedGoals} 个</span>
+                      </td>
+                      <td>
+                        <span className="drill-badge info">{item.activeGoals} 个</span>
                       </td>
                       <td>
                         <div className="drill-progress-cell">
                           <div className="drill-progress-bar">
                             <div
                               className="drill-progress-fill"
-                              style={{ width: `${item.progress}%` }}
+                              style={{ width: `${item.avgProgress}%` }}
                             />
                           </div>
-                          <span>{item.progress}%</span>
+                          <span>{item.avgProgress}%</span>
                         </div>
                       </td>
                       <td>{item.lastActionDate || "—"}</td>
