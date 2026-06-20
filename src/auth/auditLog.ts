@@ -373,3 +373,35 @@ export function mergeAuditLogs(newLogs: AuditLogEntry[]): { added: number; total
 
   return { added, total: merged.length };
 }
+
+export interface AuditLogSnapshot {
+  logs: AuditLogEntry[];
+  timestamp: number;
+  storageKey: string;
+}
+
+export function snapshotAuditLogs(): AuditLogSnapshot {
+  return {
+    logs: getStorage(),
+    timestamp: Date.now(),
+    storageKey: STORAGE_KEY,
+  };
+}
+
+export function restoreAuditLogsFromSnapshot(snapshot: AuditLogSnapshot): boolean {
+  try {
+    if (snapshot.storageKey !== STORAGE_KEY) {
+      console.warn("[审计日志] 快照存储键不匹配，尝试恢复:", snapshot.storageKey);
+    }
+    if (!Array.isArray(snapshot.logs)) {
+      console.error("[审计日志] 快照数据无效，不是数组");
+      return false;
+    }
+    setStorage(snapshot.logs);
+    emitChange();
+    return true;
+  } catch (e) {
+    console.error("[审计日志] 从快照恢复失败:", e);
+    return false;
+  }
+}

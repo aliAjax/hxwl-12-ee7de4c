@@ -15,13 +15,18 @@ import {
 import {
   exportAllDataForBackup,
   importBackupDataAtomically,
+  rollbackIndexedDBToSnapshot,
   type ImportResult,
+  type ExportedBackupData,
 } from "../db";
 import {
   getAllAuditLogs,
   replaceAllAuditLogs,
   mergeAuditLogs,
   createAuditLog,
+  snapshotAuditLogs,
+  restoreAuditLogsFromSnapshot,
+  type AuditLogSnapshot,
 } from "../auth/auditLog";
 import { useAuth, ProtectedButton } from "../auth";
 import type {
@@ -79,6 +84,7 @@ export default function BackupImportPanel({
   const [includeAuditLogs, setIncludeAuditLogs] = useState(true);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [errorDataConsistent, setErrorDataConsistent] = useState<boolean>(true);
   const [exporting, setExporting] = useState(false);
 
   const handleExport = useCallback(async () => {
@@ -104,7 +110,7 @@ export default function BackupImportPanel({
         actorRole: session.userRole as UserRole,
         actorName: session.userName,
         action: "export",
-        targetType: "system",
+        targetType: "data_backup",
         targetLabel: "完整数据备份",
         permissionChecked: "backup.export",
         status: "success",
@@ -123,7 +129,7 @@ export default function BackupImportPanel({
         actorRole: session.userRole as UserRole,
         actorName: session.userName,
         action: "export",
-        targetType: "system",
+        targetType: "data_backup",
         targetLabel: "完整数据备份",
         permissionChecked: "backup.export",
         status: "failed",
@@ -146,6 +152,7 @@ export default function BackupImportPanel({
     setPreview(null);
     setImportResult(null);
     setErrorMessage("");
+    setErrorDataConsistent(true);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -191,7 +198,16 @@ export default function BackupImportPanel({
 
     setStep("importing");
 
+    let idbSnapshot: ExportedBackupData | null = null;
+    let auditSnapshot: AuditLogSnapshot | null = null;
+    let auditLogRollbackNeeded = false;
+    let idbRollbackNeeded = false;
+    let rollbackErrors: string[] = [];
+
     try {
+      idbSnapshot = await exportAllDataForBackup();
+      auditSnapshot = snapshotAuditLogs();
+
       const importData = {
         caseRecords: backupFile.data.caseRecords || [],
         timeline: backupFile.data.timeline || [],
@@ -208,66 +224,120 @@ export default function BackupImportPanel({
         },
       };
 
-      const result = await importBackupDataAtomically(importData, importMode);
-
-      if (!result.success) {
-        throw new Error(result.error || "数据导入失败");
-      }
-
       let auditLogResult = { added: 0, total: 0 };
       if (includeAuditLogs && backupFile.data.auditLogs) {
-        if (importMode === "overwrite") {
-          replaceAllAuditLogs(backupFile.data.auditLogs);
-          auditLogResult = {
-            added: backupFile.data.auditLogs.length,
-            total: backupFile.data.auditLogs.length,
-          };
-        } else {
-          auditLogResult = mergeAuditLogs(backupFile.data.auditLogs);
+        try {
+          if (importMode === "overwrite") {
+            replaceAllAuditLogs(backupFile.data.auditLogs);
+            auditLogResult = {
+              added: backupFile.data.auditLogs.length,
+              total: backupFile.data.auditLogs.length,
+            };
+          } else {
+            auditLogResult = mergeAuditLogs(backupFile.data.auditLogs);
+          }
+          auditLogRollbackNeeded = true;
+        } catch (auditErr) {
+          console.error("审计日志写入失败:", auditErr);
+          throw new Error(
+            `审计日志写入失败: ${auditErr instanceof Error ? auditErr.message : String(auditErr)}`
+          );
         }
       }
+
+      const result = await importBackupDataAtomically(importData, importMode);
+      if (!result.success) {
+        throw new Error(result.error || "IndexedDB 数据导入失败");
+      }
+      idbRollbackNeeded = true;
 
       setImportResult(result);
       setStep("success");
 
-      createAuditLog({
-        actorRole: session.userRole as UserRole,
-        actorName: session.userName,
-        action: "create",
-        targetType: "system",
-        targetLabel: "数据备份导入",
-        permissionChecked: "backup.import",
-        status: "success",
-        details: {
-          mode: importMode,
-          includeAuditLogs,
-          importedCounts: result.importedCounts,
-          auditLogsAdded: auditLogResult.added,
-          backupFile: selectedFile?.name,
-        },
-        message: `数据导入成功，共导入 ${Object.values(result.importedCounts).reduce((a, b) => a + b, 0)} 条业务记录`,
-      });
+      try {
+        createAuditLog({
+          actorRole: session.userRole as UserRole,
+          actorName: session.userName,
+          action: "create",
+          targetType: "data_backup",
+          targetLabel: "数据备份导入",
+          permissionChecked: "backup.import",
+          status: "success",
+          details: {
+            mode: importMode,
+            includeAuditLogs,
+            importedCounts: result.importedCounts,
+            auditLogsAdded: auditLogResult.added,
+            backupFile: selectedFile?.name,
+          },
+          message: `数据导入成功，共导入 ${Object.values(result.importedCounts).reduce((a, b) => a + b, 0)} 条业务记录`,
+        });
+      } catch {
+        // 成功后写入审计日志失败不影响主流程
+      }
 
       onImportComplete?.();
     } catch (e) {
-      console.error("导入失败:", e);
-      setErrorMessage(e instanceof Error ? e.message : "导入失败");
+      console.error("导入失败，启动补偿回滚流程:", e);
+
+      if (auditLogRollbackNeeded && auditSnapshot) {
+        const auditRestored = restoreAuditLogsFromSnapshot(auditSnapshot);
+        if (!auditRestored) {
+          rollbackErrors.push("审计日志快照恢复失败");
+        } else {
+          console.warn("[补偿回滚] 审计日志已恢复到导入前状态");
+        }
+      }
+
+      if (idbRollbackNeeded && idbSnapshot) {
+        try {
+          const idbRollbackResult = await rollbackIndexedDBToSnapshot(idbSnapshot);
+          if (!idbRollbackResult.success) {
+            rollbackErrors.push(`IndexedDB 补偿回滚失败: ${idbRollbackResult.error || "未知错误"}`);
+          }
+        } catch (rbErr) {
+          rollbackErrors.push(`IndexedDB 补偿回滚异常: ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`);
+        }
+      }
+
+      const mainError = e instanceof Error ? e.message : "导入失败";
+      let finalMessage = mainError;
+      let dataConsistent = true;
+
+      if (rollbackErrors.length > 0) {
+        dataConsistent = false;
+        finalMessage = `${mainError}。补偿回滚异常: ${rollbackErrors.join("; ")}。数据可能处于不一致状态，请联系技术支持！`;
+      } else if (auditLogRollbackNeeded || idbRollbackNeeded) {
+        finalMessage = `${mainError}。已自动执行补偿回滚，数据已恢复到导入前状态。`;
+      }
+
+      setErrorMessage(finalMessage);
+      setErrorDataConsistent(dataConsistent);
       setStep("error");
 
-      createAuditLog({
-        actorRole: session.userRole as UserRole,
-        actorName: session.userName,
-        action: "create",
-        targetType: "system",
-        targetLabel: "数据备份导入",
-        permissionChecked: "backup.import",
-        status: "failed",
-        details: {
-          error: e instanceof Error ? e.message : String(e),
-          backupFile: selectedFile?.name,
-        },
-        message: "数据备份导入失败",
-      });
+      try {
+        createAuditLog({
+          actorRole: session.userRole as UserRole,
+          actorName: session.userName,
+          action: "create",
+          targetType: "data_backup",
+          targetLabel: "数据备份导入",
+          permissionChecked: "backup.import",
+          status: "failed",
+          details: {
+            error: mainError,
+            backupFile: selectedFile?.name,
+            mode: importMode,
+            includeAuditLogs,
+            rollbackPerformed: auditLogRollbackNeeded || idbRollbackNeeded,
+            rollbackErrors: rollbackErrors.length > 0 ? rollbackErrors : undefined,
+            dataConsistent,
+          },
+          message: `数据备份导入失败${dataConsistent ? "（已回滚）" : "（回滚失败）"}`,
+        });
+      } catch {
+        // ignore audit log write failure in catch
+      }
     }
   }, [backupFile, session, importMode, includeAuditLogs, selectedFile?.name, onImportComplete]);
 
@@ -279,6 +349,7 @@ export default function BackupImportPanel({
     setPreview(null);
     setImportResult(null);
     setErrorMessage("");
+    setErrorDataConsistent(true);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -630,7 +701,13 @@ export default function BackupImportPanel({
               <div className="result-icon">❌</div>
               <h3>导入失败</h3>
               <p className="result-desc">{errorMessage}</p>
-              <p className="result-note">数据未被修改，所有操作已回滚</p>
+              {errorDataConsistent ? (
+                <p className="result-note">✅ 数据一致性正常，所有操作已回滚</p>
+              ) : (
+                <p className="result-note" style={{ color: "#dc2626", fontWeight: 500 }}>
+                  ⚠️ 警告：补偿回滚不完全，数据可能处于不一致状态！请立即备份当前数据并联系技术支持。
+                </p>
+              )}
 
               <div className="result-actions">
                 <ProtectedButton

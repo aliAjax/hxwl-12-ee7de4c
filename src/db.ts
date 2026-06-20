@@ -868,3 +868,14 @@ export async function importBackupDataAtomically(
     db.close();
   }
 }
+
+export async function rollbackIndexedDBToSnapshot(snapshot: ExportedBackupData): Promise<ImportResult> {
+  console.warn("[DB] 执行补偿回滚：恢复 IndexedDB 到导入前快照");
+  const result = await importBackupDataAtomically(snapshot, "overwrite");
+  if (result.success) {
+    console.warn("[DB] 补偿回滚完成：IndexedDB 已恢复");
+  } else {
+    console.error("[DB] 补偿回滚失败！IndexedDB 可能处于不一致状态:", result.error);
+  }
+  return result;
+}

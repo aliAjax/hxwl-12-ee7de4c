@@ -14,6 +14,149 @@ export const BACKUP_FORMAT_VERSION = 1;
 export const BACKUP_FILE_MAGIC = "HXWL-BACKUP";
 export const BACKUP_FILE_EXTENSION = ".hxwl-backup.json";
 
+type FieldValidator = {
+  required: boolean;
+  type: "string" | "number" | "boolean" | "array" | "object";
+  enum?: readonly string[];
+  validator?: (value: unknown, record: Record<string, unknown>, allRecords: Record<string, unknown>[]) => string | null;
+};
+
+type StoreSchema = Record<string, FieldValidator>;
+
+const CASE_RECORD_SCHEMA: StoreSchema = {
+  id: { required: true, type: "string" },
+  clientCode: { required: true, type: "string" },
+  consultationTopic: { required: true, type: "string" },
+  sessionDate: { required: true, type: "string" },
+  mainConcern: { required: true, type: "string" },
+  emotionalState: { required: true, type: "string" },
+  intervention: { required: true, type: "string" },
+  nextGoal: { required: true, type: "string" },
+  createdAt: { required: true, type: "string" },
+  updatedAt: { required: true, type: "string" },
+};
+
+const TIMELINE_RECORD_SCHEMA: StoreSchema = {
+  id: { required: true, type: "string" },
+  clientCode: { required: true, type: "string" },
+  sessionDate: { required: true, type: "string" },
+  topic: { required: true, type: "string" },
+  emotionalState: { required: true, type: "string" },
+  intervention: { required: true, type: "string" },
+  nextGoal: { required: true, type: "string" },
+  eventType: { required: false, type: "string" },
+};
+
+const RISK_ASSESSMENT_SCHEMA: StoreSchema = {
+  id: { required: true, type: "string" },
+  clientCode: { required: true, type: "string" },
+  assessDate: { required: true, type: "string" },
+  dimensions: {
+    required: true,
+    type: "object",
+    validator: (value) => {
+      if (typeof value !== "object" || value === null) return "dimensions 必须是对象";
+      const dims = value as Record<string, unknown>;
+      const required = ["sleep", "emotion", "selfHarm", "support", "stress"];
+      for (const k of required) {
+        if (!(k in dims)) return `dimensions 缺少字段 ${k}`;
+        if (typeof dims[k] !== "number") return `dimensions.${k} 必须是数字`;
+      }
+      return null;
+    },
+  },
+  totalScore: { required: true, type: "number" },
+  level: { required: true, type: "string", enum: ["stable", "watch", "medium", "high"] as const },
+  summary: { required: true, type: "string" },
+  explanation: { required: false, type: "string" },
+  createdAt: { required: false, type: "string" },
+};
+
+const INTERVENTION_GOAL_SCHEMA: StoreSchema = {
+  id: { required: true, type: "string" },
+  clientCode: { required: true, type: "string" },
+  goalTitle: { required: true, type: "string" },
+  description: { required: true, type: "string" },
+  status: { required: true, type: "string", enum: ["active", "paused", "completed"] as const },
+  totalSteps: { required: true, type: "number" },
+  completedSteps: { required: true, type: "number" },
+  lastAction: { required: true, type: "string" },
+  lastActionDate: { required: true, type: "string" },
+  nextPractice: { required: true, type: "string" },
+  nextPracticeDate: { required: true, type: "string" },
+  createdAt: { required: true, type: "string" },
+};
+
+const CRISIS_WARNING_SCHEMA: StoreSchema = {
+  id: { required: true, type: "string" },
+  clientCode: { required: true, type: "string" },
+  triggerType: { required: true, type: "string", enum: ["risk_assessment", "case_record"] as const },
+  triggerId: { required: true, type: "string" },
+  triggerReason: { required: true, type: "string" },
+  status: { required: true, type: "string", enum: ["pending", "confirmed", "escalated", "referred", "closed"] as const },
+  createdAt: { required: true, type: "string" },
+  updatedAt: { required: true, type: "string" },
+  actions: {
+    required: true,
+    type: "array",
+    validator: (value) => {
+      if (!Array.isArray(value)) return "actions 必须是数组";
+      for (let i = 0; i < value.length; i++) {
+        const a = value[i] as Record<string, unknown>;
+        if (!a || typeof a !== "object") return `actions[${i}] 必须是对象`;
+        const required = ["id", "fromStatus", "toStatus", "handler", "handledAt", "description"];
+        for (const k of required) {
+          if (!(k in a)) return `actions[${i}] 缺少字段 ${k}`;
+        }
+      }
+      return null;
+    },
+  },
+};
+
+const AUDIT_LOG_SCHEMA: StoreSchema = {
+  id: { required: true, type: "string" },
+  timestamp: { required: true, type: "string" },
+  actorRole: { required: true, type: "string", enum: ["counselor", "supervisor", "admin"] as const },
+  actorName: { required: true, type: "string" },
+  action: { required: true, type: "string" },
+  targetType: { required: true, type: "string" },
+  status: { required: true, type: "string", enum: ["success", "denied", "failed"] as const },
+  targetId: { required: false, type: "string" },
+  targetLabel: { required: false, type: "string" },
+  permissionChecked: { required: false, type: "string" },
+  ip: { required: false, type: "string" },
+  userAgent: { required: false, type: "string" },
+  details: { required: false, type: "object" },
+  message: { required: false, type: "string" },
+};
+
+const STORE_SCHEMAS: Record<string, StoreSchema> = {
+  caseRecords: CASE_RECORD_SCHEMA,
+  timeline: TIMELINE_RECORD_SCHEMA,
+  riskAssessments: RISK_ASSESSMENT_SCHEMA,
+  goals: INTERVENTION_GOAL_SCHEMA,
+  crisisWarnings: CRISIS_WARNING_SCHEMA,
+  auditLogs: AUDIT_LOG_SCHEMA,
+};
+
+const STORE_LABELS: Record<string, string> = {
+  caseRecords: "个案记录",
+  timeline: "会谈时间线",
+  riskAssessments: "风险评估",
+  goals: "干预目标",
+  crisisWarnings: "危机预警",
+  auditLogs: "审计日志",
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  string: "字符串",
+  number: "数字",
+  boolean: "布尔值",
+  array: "数组",
+  object: "对象",
+};
+
 export interface BackupMetaData {
   nextTimelineId: number;
   nextRiskId: number;
@@ -185,6 +328,254 @@ export function createBackupFile(params: {
   return backup;
 }
 
+function getTypeOf(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "array";
+  return typeof value;
+}
+
+function validateType(value: unknown, expected: FieldValidator["type"]): boolean {
+  const actual = getTypeOf(value);
+  if (expected === "object") return actual === "object";
+  return actual === expected;
+}
+
+function validateRecord(
+  record: unknown,
+  schema: StoreSchema,
+  index: number,
+  storeLabel: string
+): string[] {
+  const errors: string[] = [];
+  if (typeof record !== "object" || record === null) {
+    return [`${storeLabel}[${index}] 不是有效的对象`];
+  }
+  const rec = record as Record<string, unknown>;
+
+  for (const [field, rules] of Object.entries(schema)) {
+    const value = rec[field];
+
+    if (value === undefined || value === null) {
+      if (rules.required) {
+        errors.push(`${storeLabel}[${index}] 缺少必填字段: ${field}`);
+      }
+      continue;
+    }
+
+    if (!validateType(value, rules.type)) {
+      errors.push(
+        `${storeLabel}[${index}] 字段 ${field} 类型错误: 期望${TYPE_LABEL[rules.type] || rules.type}, 实际为${getTypeOf(value)}`
+      );
+      continue;
+    }
+
+    if (rules.enum && typeof value === "string" && !rules.enum.includes(value)) {
+      errors.push(
+        `${storeLabel}[${index}] 字段 ${field} 值 '${value}' 不在允许范围内: [${rules.enum.join(", ")}]`
+      );
+      continue;
+    }
+
+    if (rules.validator) {
+      const customErr = rules.validator(value, rec, []);
+      if (customErr) {
+        errors.push(`${storeLabel}[${index}] ${customErr}`);
+      }
+    }
+  }
+
+  return errors;
+}
+
+function validateStore(
+  data: unknown,
+  storeName: string,
+  schema: StoreSchema,
+  issues: ValidationIssue[],
+  maxErrors = 10
+): { validCount: number; invalidCount: number } {
+  if (!Array.isArray(data)) {
+    issues.push({
+      severity: "error",
+      code: `INVALID_${storeName.toUpperCase()}_TYPE`,
+      message: `${STORE_LABELS[storeName] || storeName} 数据必须是数组格式`,
+      affectedStore: storeName,
+    });
+    return { validCount: 0, invalidCount: 0 };
+  }
+
+  const allRecords = data as Record<string, unknown>[];
+  let invalidCount = 0;
+  let errorCollected = 0;
+  const idSet = new Set<string>();
+  const duplicateIds: string[] = [];
+
+  for (let i = 0; i < allRecords.length; i++) {
+    const rec = allRecords[i];
+    const recordErrors = validateRecord(rec, schema, i, STORE_LABELS[storeName] || storeName);
+    if (recordErrors.length > 0) {
+      invalidCount++;
+      if (errorCollected < maxErrors) {
+        issues.push({
+          severity: "error",
+          code: `INVALID_RECORD_${storeName.toUpperCase()}`,
+          message: recordErrors[0],
+          details: recordErrors.length > 1 ? recordErrors.slice(1).join("; ") : undefined,
+          affectedStore: storeName,
+          affectedCount: allRecords.length,
+        });
+        errorCollected++;
+      }
+    }
+
+    const id = (rec as { id?: unknown }).id;
+    if (typeof id === "string") {
+      if (idSet.has(id)) {
+        duplicateIds.push(id);
+      } else {
+        idSet.add(id);
+      }
+    }
+  }
+
+  if (duplicateIds.length > 0) {
+    issues.push({
+      severity: "error",
+      code: `DUPLICATE_ID_${storeName.toUpperCase()}`,
+      message: `${STORE_LABELS[storeName] || storeName} 存在 ${duplicateIds.length} 个重复ID`,
+      details:
+        duplicateIds.length <= 5
+          ? `重复ID: ${duplicateIds.join(", ")}`
+          : `前5个重复ID: ${duplicateIds.slice(0, 5).join(", ")} 等`,
+      affectedStore: storeName,
+      affectedCount: duplicateIds.length,
+    });
+    invalidCount += duplicateIds.length;
+  }
+
+  if (invalidCount > 0 && errorCollected >= maxErrors) {
+    issues.push({
+      severity: "warning",
+      code: `TOO_MANY_ERRORS_${storeName.toUpperCase()}`,
+      message: `${STORE_LABELS[storeName] || storeName} 仅显示前 ${maxErrors} 条错误，共 ${invalidCount} 条记录存在问题`,
+      affectedStore: storeName,
+      affectedCount: invalidCount,
+    });
+  }
+
+  return { validCount: allRecords.length - invalidCount, invalidCount };
+}
+
+function validateMeta(
+  meta: unknown,
+  issues: ValidationIssue[]
+): void {
+  if (typeof meta !== "object" || meta === null) {
+    issues.push({
+      severity: "error",
+      code: "INVALID_META",
+      message: "元数据(meta)必须是对象格式",
+    });
+    return;
+  }
+  const m = meta as Record<string, unknown>;
+  const counters = [
+    "nextTimelineId",
+    "nextRiskId",
+    "nextGoalId",
+    "nextCaseRecordId",
+    "nextCrisisWarningId",
+  ];
+  for (const k of counters) {
+    if (k in m && m[k] !== undefined && typeof m[k] !== "number") {
+      issues.push({
+        severity: "error",
+        code: "INVALID_META_COUNTER",
+        message: `元数据字段 ${k} 必须是数字类型`,
+        affectedStore: "meta",
+      });
+    }
+  }
+  if ("dbVersion" in m && typeof m.dbVersion !== "number") {
+    issues.push({
+      severity: "error",
+      code: "INVALID_META_DBVERSION",
+      message: "元数据字段 dbVersion 必须是数字类型",
+      affectedStore: "meta",
+    });
+  }
+}
+
+function validateChecksums(
+  data: BackupData,
+  checksums: Record<string, string> | undefined,
+  issues: ValidationIssue[]
+): void {
+  if (!checksums || typeof checksums !== "object") {
+    issues.push({
+      severity: "warning",
+      code: "CHECKSUM_MISSING",
+      message: "备份文件缺少校验和，无法验证数据完整性",
+      details: "建议重新导出备份文件以获得完整校验",
+    });
+    return;
+  }
+
+  const actual = computeChecksums(data);
+  const failed: string[] = [];
+  for (const store of Object.keys(actual)) {
+    if (checksums[store] !== actual[store]) {
+      failed.push(STORE_LABELS[store] || store);
+    }
+  }
+  if (failed.length > 0) {
+    issues.push({
+      severity: "error",
+      code: "CHECKSUM_MISMATCH",
+      message: `数据完整性校验失败，${failed.length} 个数据块的校验和不匹配`,
+      details: `受影响数据: ${failed.join("、")}。文件可能已损坏或被篡改。`,
+      affectedCount: failed.length,
+    });
+  } else {
+    issues.push({
+      severity: "info",
+      code: "CHECKSUM_OK",
+      message: "所有数据块的校验和验证通过，文件完整性正常",
+    });
+  }
+}
+
+function validateStats(
+  data: BackupData,
+  stats: BackupStats | undefined,
+  issues: ValidationIssue[]
+): void {
+  if (!stats || typeof stats !== "object") {
+    issues.push({
+      severity: "warning",
+      code: "STATS_MISSING",
+      message: "备份文件缺少统计信息",
+    });
+    return;
+  }
+
+  const actual = computeStats(data);
+  const mismatch: string[] = [];
+  for (const store of Object.keys(actual) as Array<keyof BackupStats>) {
+    if (typeof actual[store] === "number" && typeof stats[store] === "number" && actual[store] !== stats[store]) {
+      mismatch.push(`${STORE_LABELS[store] || store}(期望${stats[store]}，实际${actual[store]})`);
+    }
+  }
+  if (mismatch.length > 0) {
+    issues.push({
+      severity: "warning",
+      code: "STATS_MISMATCH",
+      message: "统计信息与实际数据不一致",
+      details: mismatch.join("；"),
+    });
+  }
+}
+
 export function validateBackupFile(raw: unknown): ValidationResult {
   const issues: ValidationIssue[] = [];
   let structureValid = true;
@@ -254,7 +645,7 @@ export function validateBackupFile(raw: unknown): ValidationResult {
     structureValid = false;
   }
 
-  if (!structureValid) {
+  if (!structureValid || !versionCompatible) {
     return { valid: false, issues, structureValid, versionCompatible, sensitiveFields: [] };
   }
 
@@ -266,10 +657,26 @@ export function validateBackupFile(raw: unknown): ValidationResult {
       issues.push({
         severity: "warning",
         code: `MISSING_${store.toUpperCase()}`,
-        message: `备份文件中缺少 ${store} 数据，导入时该部分将保持不变`,
+        message: `备份文件中缺少 ${STORE_LABELS[store] || store} 数据，导入时该部分将保持不变`,
         affectedStore: store,
       });
     }
+  }
+
+  validateMeta(data.meta, issues);
+
+  const storeEntries = Object.entries(STORE_SCHEMAS) as Array<[keyof BackupData, StoreSchema]>;
+  for (const [storeName, schema] of storeEntries) {
+    const storeData = data[storeName];
+    if (storeData !== undefined) {
+      validateStore(storeData, storeName, schema, issues);
+    }
+  }
+
+  const backup = obj as BackupFile;
+  if (backup.data && typeof backup.data === "object") {
+    validateChecksums(backup.data as BackupData, backup.checksums, issues);
+    validateStats(backup.data as BackupData, backup.stats, issues);
   }
 
   if (Array.isArray(data.caseRecords)) {
