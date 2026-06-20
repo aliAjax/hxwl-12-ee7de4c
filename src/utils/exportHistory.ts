@@ -68,7 +68,9 @@ function emitChange(): void {
 
 export function addExportHistoryListener(fn: (entries: ExportHistoryEntry[]) => void) {
   listeners.add(fn);
-  return () => listeners.delete(fn);
+  return () => {
+    listeners.delete(fn);
+  };
 }
 
 export interface CreateExportHistoryParams {

@@ -435,7 +435,7 @@ export default function SessionSummaryExport({
                           actorRole: currentRole,
                           actorName: session?.userName,
                           action: "view",
-                          targetType: "export_scope",
+                          targetType: "export_summary",
                           targetLabel: scope.label,
                           permissionChecked: permAction,
                           status: "denied",

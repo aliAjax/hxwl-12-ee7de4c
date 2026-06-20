@@ -777,6 +777,7 @@ export function generateExportByScope(
         generationDate,
         operatorRole,
         operatorName,
+        dateRange,
       },
       allMaskedItems: maskedItems,
     };

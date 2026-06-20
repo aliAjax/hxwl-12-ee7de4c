@@ -350,8 +350,7 @@ export default function ExportHistoryCenter({ onToast }: Props) {
                 <ProtectedButton
                   action="audit.delete"
                   className="eh-btn-delete"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  onClick={() => {
                     handleDelete(entry.id);
                   }}
                 >
