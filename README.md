@@ -25,18 +25,18 @@ npm run dev
 
 ## 高风险数据流程说明
 
-项目内置以下涉及敏感用户数据的核心流程，均有对应的测试覆盖：
+项目内置以下涉及敏感用户数据的核心流程，其中**纯函数层**均有对应的单元测试覆盖：
 
-| 模块 | 文件 | 说明 | 风险点 |
-|------|------|------|--------|
-| IndexedDB 存储 | [db.ts](src/db.ts) | 所有业务数据持久化 | 数据损坏、版本迁移 |
-| 审计日志 | [auditLog.ts](src/auth/auditLog.ts) | 所有操作写入 localStorage | 权限绕过、日志篡改 |
-| 导出历史 | [exportHistory.ts](src/utils/exportHistory.ts) | 每次导出记录到 localStorage | 数据泄露、权限越级 |
-| 数据脱敏 | [desensitize.ts](src/utils/desensitize.ts) | 身份证/手机号/姓名识别与遮蔽 | 漏脱敏、过度脱敏 |
-| 备份导出 | [backupImport.ts](src/utils/backupImport.ts) | 全量数据打包下载 | 数据完整性、校验和 |
-| 备份导入 | [backupImport.ts](src/utils/backupImport.ts) | 外部文件全量恢复 | 恶意文件、数据污染 |
-| 权限控制 | [permissions.ts](src/auth/permissions.ts) | 三角色权限矩阵 | 越权访问 |
-| 数据过滤 | [dataFilter.ts](src/auth/dataFilter.ts) | 按角色过滤数据视图 | 敏感字段泄露 |
+| 模块 | 文件 | 说明 | 风险点 | 测试覆盖 |
+|------|------|------|--------|----------|
+| IndexedDB 存储 | [db.ts](src/db.ts) | 所有业务数据持久化 | 数据损坏、版本迁移 | ⚠️ 仅通过备份导入校验间接覆盖 |
+| 审计日志 | [auditLog.ts](src/auth/auditLog.ts) | 所有操作写入 localStorage | 权限绕过、日志篡改 | ✅ 完整覆盖（过滤、统计、快照） |
+| 导出历史 | [exportHistory.ts](src/utils/exportHistory.ts) | 每次导出记录到 localStorage | 数据泄露、权限越级 | ✅ 完整覆盖（过滤、统计、CRUD） |
+| 数据脱敏 | [desensitize.ts](src/utils/desensitize.ts) | 身份证/手机号/姓名识别与遮蔽 | 漏脱敏、过度脱敏 | ✅ 通过报告生成测试间接覆盖 |
+| 备份导出 | [backupImport.ts](src/utils/backupImport.ts) | 全量数据打包下载 | 数据完整性、校验和 | ✅ 完整覆盖（校验和、版本、结构校验） |
+| 备份导入 | [backupImport.ts](src/utils/backupImport.ts) | 外部文件全量恢复 | 恶意文件、数据污染 | ✅ 完整覆盖（65 个用例） |
+| 权限控制 | [permissions.ts](src/auth/permissions.ts) | 三角色权限矩阵 | 越权访问 | ✅ 完整覆盖（43 个用例） |
+| 数据过滤 | [dataFilter.ts](src/auth/dataFilter.ts) | 按角色过滤数据视图 | 敏感字段泄露 | ✅ 完整覆盖（三角色视图） |
 
 ---
 
@@ -110,6 +110,21 @@ npm run test:coverage # 生成覆盖率报告
 | [exportHistory.test.ts](tests/exportHistory.test.ts) | 导出历史 | 过滤、统计、CRUD 操作 |
 | [summaryGenerator.test.ts](tests/summaryGenerator.test.ts) | 报告生成 | 五段式摘要、督导草稿、多种导出范围、脱敏输出 |
 | [dataFilter.test.ts](tests/dataFilter.test.ts) | 数据过滤 | 三角色数据视图、活跃来访者提取、菜单访问权限 |
+
+---
+
+### 3.1 测试边界说明
+
+当前单元测试聚焦于**纯函数逻辑层**，以下内容**不在本次测试覆盖范围内**：
+
+| 类别 | 说明 | 原因 |
+|------|------|------|
+| IndexedDB 实际读写 | `db.ts` 中的数据库增删改查、版本迁移 | 需要 mock-indexeddb 或集成测试环境，本次质量流程以纯函数验证为主 |
+| React 组件渲染 | 各 `.tsx` 组件的 UI 交互 | UI 测试建议使用 React Testing Library + E2E 测试补充 |
+| 真实浏览器 API | `downloadBackupFile` 等 DOM/BOM 操作 | jsdom 环境有限，核心逻辑已在纯函数层验证 |
+| IndexedDB → 备份数据链路 | 从数据库读取后导出的完整端到端流程 | 拆分为「数据库层」和「备份逻辑层」，当前仅覆盖后者 |
+
+备份导入导出等高风险模块的**校验和计算、版本校验、冲突检测、数据脱敏**等核心逻辑均已通过纯函数测试验证，可保证在无真实数据库的 CI 环境中稳定运行。
 
 ---
 
