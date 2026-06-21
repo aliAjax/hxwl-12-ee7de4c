@@ -66,7 +66,7 @@ describe("备份文件结构校验", () => {
 
   it("缺少 caseRecords 数据应返回 MISSING_CASERECORDS 错误", () => {
     const badFile = createValidBackupFile();
-    delete (badFile.data as Record<string, unknown>).caseRecords;
+    delete (badFile.data as unknown as Record<string, unknown>).caseRecords;
     const result = validateBackupFile(badFile);
     expect(result.valid).toBe(false);
     expect(result.issues.some(i => i.code === "MISSING_CASERECORDS")).toBe(true);
@@ -74,7 +74,7 @@ describe("备份文件结构校验", () => {
 
   it("缺少 timeline 数据应返回 MISSING_TIMELINE 错误", () => {
     const badFile = createValidBackupFile();
-    delete (badFile.data as Record<string, unknown>).timeline;
+    delete (badFile.data as unknown as Record<string, unknown>).timeline;
     const result = validateBackupFile(badFile);
     expect(result.issues.some(i => i.code === "MISSING_TIMELINE")).toBe(true);
   });
@@ -95,7 +95,7 @@ describe("备份文件结构校验", () => {
 
   it("caseRecords 不是数组应返回错误", () => {
     const badFile = createValidBackupFile();
-    (badFile.data as Record<string, unknown>).caseRecords = "not an array";
+    (badFile.data as unknown as Record<string, unknown>).caseRecords = "not an array";
     const result = validateBackupFile(badFile);
     expect(result.valid).toBe(false);
     expect(result.issues.some(i => i.code === "INVALID_CASERECORDS_TYPE")).toBe(true);
@@ -122,7 +122,7 @@ describe("备份文件结构校验", () => {
 
   it("meta 必须是对象", () => {
     const badFile = createValidBackupFile();
-    (badFile.data as Record<string, unknown>).meta = "not an object";
+    (badFile.data as unknown as Record<string, unknown>).meta = "not an object";
     const result = validateBackupFile(badFile);
     expect(result.issues.some(i => i.code === "INVALID_META")).toBe(true);
   });

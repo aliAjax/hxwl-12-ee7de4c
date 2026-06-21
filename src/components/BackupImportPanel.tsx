@@ -101,14 +101,14 @@ export default function BackupImportPanel({
           ...dbData,
           auditLogs,
         },
-        exportedByRole: session.userRole as UserRole,
+        exportedByRole: session.role,
         exportedByName: session.userName,
       });
 
       downloadBackupFile(backup);
 
       createAuditLog({
-        actorRole: session.userRole as UserRole,
+        actorRole: session.role,
         actorName: session.userName,
         action: "export",
         targetType: "data_backup",
@@ -127,7 +127,7 @@ export default function BackupImportPanel({
       setStep("error");
 
       createAuditLog({
-        actorRole: session.userRole as UserRole,
+        actorRole: session.role,
         actorName: session.userName,
         action: "export",
         targetType: "data_backup",
@@ -259,7 +259,7 @@ export default function BackupImportPanel({
 
       try {
         createAuditLog({
-          actorRole: session.userRole as UserRole,
+          actorRole: session.role,
           actorName: session.userName,
           action: "create",
           targetType: "data_backup",
@@ -321,7 +321,7 @@ export default function BackupImportPanel({
 
       try {
         createAuditLog({
-          actorRole: session.userRole as UserRole,
+          actorRole: session.role,
           actorName: session.userName,
           action: "create",
           targetType: "data_backup",

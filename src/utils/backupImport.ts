@@ -693,39 +693,39 @@ export function validateBackupFile(raw: unknown): ValidationResult {
     return { valid: false, issues, structureValid: false, versionCompatible, sensitiveFields };
   }
 
-  const backup = obj as BackupFile;
+  const backup = obj as unknown as BackupFile;
   if (backup.data && typeof backup.data === "object") {
     validateChecksums(data, backup.checksums, issues);
     validateStats(data, backup.stats, issues);
   }
 
   if (Array.isArray(data.caseRecords)) {
-    const sampleField = findSensitiveInArray(data.caseRecords as Record<string, unknown>[], ["mainConcern", "intervention", "nextGoal", "consultationTopic"]);
+    const sampleField = findSensitiveInArray(data.caseRecords as unknown as Record<string, unknown>[], ["mainConcern", "intervention", "nextGoal", "consultationTopic"]);
     if (sampleField) sensitiveFields.push({ store: "个案记录", field: sampleField.field, sampleMasked: sampleField.masked, count: sampleField.count, types: sampleField.types });
   }
 
   if (Array.isArray(data.timeline)) {
-    const sampleField = findSensitiveInArray(data.timeline as Record<string, unknown>[], ["topic", "intervention", "nextGoal", "emotionalState"]);
+    const sampleField = findSensitiveInArray(data.timeline as unknown as Record<string, unknown>[], ["topic", "intervention", "nextGoal", "emotionalState"]);
     if (sampleField) sensitiveFields.push({ store: "会谈时间线", field: sampleField.field, sampleMasked: sampleField.masked, count: sampleField.count, types: sampleField.types });
   }
 
   if (Array.isArray(data.riskAssessments)) {
-    const sampleField = findSensitiveInArray(data.riskAssessments as Record<string, unknown>[], ["summary", "explanation"]);
+    const sampleField = findSensitiveInArray(data.riskAssessments as unknown as Record<string, unknown>[], ["summary", "explanation"]);
     if (sampleField) sensitiveFields.push({ store: "风险评估", field: sampleField.field, sampleMasked: sampleField.masked, count: sampleField.count, types: sampleField.types });
   }
 
   if (Array.isArray(data.goals)) {
-    const sampleField = findSensitiveInArray(data.goals as Record<string, unknown>[], ["goalTitle", "description", "lastAction", "nextPractice"]);
+    const sampleField = findSensitiveInArray(data.goals as unknown as Record<string, unknown>[], ["goalTitle", "description", "lastAction", "nextPractice"]);
     if (sampleField) sensitiveFields.push({ store: "干预目标", field: sampleField.field, sampleMasked: sampleField.masked, count: sampleField.count, types: sampleField.types });
   }
 
   if (Array.isArray(data.crisisWarnings)) {
-    const sampleField = findSensitiveInArray(data.crisisWarnings as Record<string, unknown>[], ["triggerReason"]);
+    const sampleField = findSensitiveInArray(data.crisisWarnings as unknown as Record<string, unknown>[], ["triggerReason"]);
     if (sampleField) sensitiveFields.push({ store: "危机预警", field: sampleField.field, sampleMasked: sampleField.masked, count: sampleField.count, types: sampleField.types });
   }
 
   if (Array.isArray(data.auditLogs)) {
-    const sampleField = findSensitiveInArray(data.auditLogs as Record<string, unknown>[], ["message"]);
+    const sampleField = findSensitiveInArray(data.auditLogs as unknown as Record<string, unknown>[], ["message"]);
     if (sampleField) sensitiveFields.push({ store: "审计日志", field: sampleField.field, sampleMasked: sampleField.masked, count: sampleField.count, types: sampleField.types });
   }
 

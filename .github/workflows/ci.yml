@@ -1,0 +1,73 @@
+name: CI - 质量检查
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+jobs:
+  quality-check:
+    name: 类型检查 + 构建 + 测试
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20.x]
+
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 缓存构建产物
+        uses: actions/cache@v4
+        with:
+          path: |
+            dist
+            node_modules/.vite
+          key: ${{ runner.os }}-vite-${{ hashFiles('**/package-lock.json', '**/vite.config.ts') }}
+          restore-keys: |
+            ${{ runner.os }}-vite-
+
+      - name: Step 1 - TypeScript 类型检查
+        run: npm run typecheck
+        continue-on-error: false
+
+      - name: Step 2 - Vite 生产构建
+        run: npm run build
+        continue-on-error: false
+
+      - name: Step 3 - 运行单元测试
+        run: npm run test
+        continue-on-error: false
+
+      - name: 生成测试覆盖率报告
+        if: always()
+        run: npm run test:coverage
+        continue-on-error: true
+
+      - name: 上传覆盖率 Artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      - name: 上传构建产物 Artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-dist
+          path: dist/
+          retention-days: 7

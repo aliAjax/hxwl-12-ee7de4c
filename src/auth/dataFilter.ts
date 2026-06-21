@@ -1,5 +1,5 @@
-import type { UserRole, FieldKey } from "./roleConfig";
-import { canViewField, hasPermission } from "./permissions";
+import type { UserRole, FieldKey, MenuKey } from "./roleConfig";
+import { canViewField, hasPermission, canViewMenu } from "./permissions";
 import type {
   CaseRecord,
   TimelineRecord,
@@ -130,7 +130,7 @@ function filterSupervisionRecord(record: SupervisionRecord, role: UserRole): Sup
 function filterCrisisWarning(warning: CrisisWarning, role: UserRole): CrisisWarning {
   const filtered: CrisisWarning = { ...warning };
 
-  if (!hasPermission(role, "crisis.view").allowed) {
+  if (role === "admin" || !hasPermission(role, "crisis.view").allowed) {
     filtered.triggerReason = maskSensitiveContent(warning.triggerReason, true);
     filtered.actions = [];
   }
@@ -193,7 +193,7 @@ export function getActiveClientCodes(
 }
 
 export function canAccessTab(role: UserRole, tab: string): boolean {
-  const menuMap: Record<string, string> = {
+  const menuMap: Record<string, MenuKey> = {
     caseRecords: "menu.caseRecords",
     timeline: "menu.timeline",
     risk: "menu.riskAssessment",
@@ -202,13 +202,13 @@ export function canAccessTab(role: UserRole, tab: string): boolean {
     crisisWarning: "menu.crisisWarning",
     export: "menu.export",
     audit: "menu.auditLog",
+    dataOverview: "menu.dataOverview",
   };
 
   const menuKey = menuMap[tab];
   if (!menuKey) return false;
 
-  return hasPermission(role, "data.overview").allowed ||
-    canViewField(role, "case.clientCode");
+  return canViewMenu(role, menuKey);
 }
 
 export function createPermissionDeniedHandler(
